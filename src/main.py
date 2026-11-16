@@ -1,4 +1,5 @@
-import tkinter as tk 
+import tkinter as tk
+from components import theme
 
 class App(tk.Tk):
     def __init__(self):
@@ -8,6 +9,7 @@ class App(tk.Tk):
         self.windows_center(600, 400)
         self.resizable(False, False)
         self.bind("<Configure>", self.on_move)
+        self.create_widgets()
 
     def windows_center(self, width, height):
         screen_width = self.winfo_screenwidth()
@@ -24,6 +26,10 @@ class App(tk.Tk):
     def system_ascii(self):
 
         print(f"System ASCII: {self.tk.call('tk', 'windowingsystem')}")
+
+    def create_widgets(self):
+        self.canvas = tk.Canvas(self, bg=theme.CURRENT_THEME["bg_main"], highlightthickness=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
 
     
 if __name__ == "__main__":
