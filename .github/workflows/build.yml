@@ -40,7 +40,7 @@ jobs:
       - name: Build binary
         shell: bash
         run: |
-          pyinstaller --onedir --clean --noconfirm --name mixput src/mixput/main.py
+          pyinstaller --onedir --clean --noconfirm --name mixput src/main.py
 
       - name: Package archive
         shell: bash
