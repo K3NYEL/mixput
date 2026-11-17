@@ -1,0 +1,2 @@
+class NetworkCatcher:
+    pass
