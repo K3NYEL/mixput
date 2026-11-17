@@ -7,7 +7,6 @@ from app.components import theme, App
 class MainWindows(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.system_ascii()
         self.create_widgets()
         self.title("Mixput")
         self.windows_center(600, 400)
@@ -19,9 +18,6 @@ class MainWindows(tk.Tk):
     def resource_path(self, relative_path: str) -> Path:
         base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
         return base_path / relative_path
-
-    def system_ascii(self):
-        print(f"System ASCII: {self.tk.call('tk', 'windowingsystem')}")
 
     def windows_center(self, width, height):
         screen_width = self.winfo_screenwidth()

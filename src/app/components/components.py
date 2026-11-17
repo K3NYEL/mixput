@@ -109,11 +109,9 @@ class App(tk.Canvas):
         if self.DARK_THEME:
             self.CURRENT_THEME = self.theme.DARK_THEME
             self.theme_button.config(image=self.moon_icon)
-            print("Theme changed to DARK_THEME")
         else:
             self.CURRENT_THEME = self.theme.LIGHT_THEME
             self.theme_button.config(image=self.sun_icon)
-            print("Theme changed to LIGHT_THEME")
 
         self.theme_apply()
 

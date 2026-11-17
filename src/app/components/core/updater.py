@@ -25,7 +25,6 @@ def obtain_version():
     resp.raise_for_status()
 
     tag = resp.json().get("tag_name", "")
-    print(f"Latest version: {tag.lstrip('v') or None}")
     return tag.lstrip('v') or None
 
 def update_error(message: str) -> None:
