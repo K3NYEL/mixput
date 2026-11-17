@@ -1,12 +1,22 @@
-name: Build Executables
+name: Build and Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag del Release (ej. v0.1.0)"
+        required: true
+        default: "v0.1.0"
   push:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   build:
+    timeout-minutes: 15
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -17,7 +27,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.15"
+          python-version: "3.12"
 
       - name: Install dependencies
         shell: bash
@@ -25,13 +35,44 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyinstaller
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install --no-build-isolation --no-deps . || true
 
       - name: Build binary
         shell: bash
-        run: pyinstaller mixput.spec --clean
+        run: |
+          pyinstaller --onedir --clean --noconfirm --name mixput src/mixput/main.py
 
-      - name: Upload artifact
+      - name: Package archive
+        shell: bash
+        run: |
+          mkdir -p dist/packages
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            powershell -Command "Compress-Archive -Path 'dist/mixput/*' -DestinationPath 'dist/packages/mixput-windows-x64.zip' -Force"
+          else
+            (cd dist/mixput && zip -r ../packages/mixput-linux-x64.zip .)
+          fi
+
+      - name: Upload package artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mixput-${{ matrix.os }}
-          path: dist/*
+          name: release-pkg-${{ matrix.os }}
+          path: dist/packages/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all packages
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          files: release-assets/*
+          generate_release_notes: true
