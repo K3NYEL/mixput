@@ -1,4 +1,6 @@
 import tkinter as tk
+import sys 
+import os 
 
 from components import theme, App
 
@@ -13,6 +15,11 @@ class MainWindows(tk.Tk):
         self.theme = theme
         self.DARK_THEME = False
         self.CURRENT_THEME = self.theme.LIGHT_THEME
+
+    def resource_path(self, relative_path):
+        if hasattr(sys, '_MEIPASS'):
+            return os.path.join(sys._MEIPASS, relative_path)
+        return os.path.join(os.path.abspath("."), relative_path)
 
     def system_ascii(self):
         print(f"System ASCII: {self.tk.call('tk', 'windowingsystem')}")
