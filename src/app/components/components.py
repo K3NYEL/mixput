@@ -1,11 +1,14 @@
 import tkinter as tk
+import threading 
 from tkinter_icons import LucideIcon
 
 from app.components import theme
-
+from .core.updater import *
+from .core.updater import obtain_version
 class App(tk.Canvas):
     def __init__(self):
         super().__init__()
+        self.current_version = obtain_version()
         self.theme = theme
         self.DARK_THEME = False
         self.CURRENT_THEME = self.theme.LIGHT_THEME
@@ -17,6 +20,15 @@ class App(tk.Canvas):
         self.sun_icon = LucideIcon(
             "sun", size=20, color=self.CURRENT_THEME["text_primary"]
         )
+
+    def start_update_check(self, on_update_available):
+        self.check_update = check_for_update()
+        def worker():
+            info = self.check_update
+            if info:
+                self.after(0, lambda: on_update_available(info))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def create_widgets(self):
         self.charge_icon_theme = LucideIcon(
