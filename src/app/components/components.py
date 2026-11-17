@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter_icons import LucideIcon
 
-from components import theme
+from app.components import theme
 
 class App(tk.Canvas):
     def __init__(self):
