@@ -1,8 +1,8 @@
 import tkinter as tk
 import sys 
-import os 
+from pathlib import Path
 
-from components import theme, App
+from app.components import theme, App
 
 class MainWindows(tk.Tk):
     def __init__(self):
@@ -16,10 +16,9 @@ class MainWindows(tk.Tk):
         self.DARK_THEME = False
         self.CURRENT_THEME = self.theme.LIGHT_THEME
 
-    def resource_path(self, relative_path):
-        if hasattr(sys, '_MEIPASS'):
-            return os.path.join(sys._MEIPASS, relative_path)
-        return os.path.join(os.path.abspath("."), relative_path)
+    def resource_path(self, relative_path: str) -> Path:
+        base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+        return base_path / relative_path
 
     def system_ascii(self):
         print(f"System ASCII: {self.tk.call('tk', 'windowingsystem')}")
