@@ -1,23 +1,33 @@
 import tkinter as tk
-import sys 
+import sys
 from pathlib import Path
+from PIL import Image, ImageTk
 
 from app.components import theme, App
+
 
 class MainWindows(tk.Tk):
     def __init__(self):
         super().__init__()
         self.create_widgets()
         self.title("Mixput")
-        self.windows_center(600, 400)
+        self.windows_center(700, 500)
         self.resizable(False, False)
         self.theme = theme
         self.DARK_THEME = False
         self.CURRENT_THEME = self.theme.LIGHT_THEME
+        self._set_window_icon()
 
     def resource_path(self, relative_path: str) -> Path:
         base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
         return base_path / relative_path
+
+    def _set_window_icon(self):
+        icon_file = self.resource_path("public/assets/mixput-ico.png")
+        if icon_file.exists():
+            img = Image.open(icon_file)
+            self._icon_photo = ImageTk.PhotoImage(img)
+            self.iconphoto(True, self._icon_photo)
 
     def windows_center(self, width, height):
         screen_width = self.winfo_screenwidth()
@@ -29,6 +39,7 @@ class MainWindows(tk.Tk):
     def create_widgets(self):
         self.app = App()
         self.app.pack(fill=tk.BOTH, expand=True)
+
 
 if __name__ == "__main__":
     app = MainWindows()

@@ -7,7 +7,7 @@ def create_mixput_frame(self):
         self,
         bg=theme.CURRENT_THEME["bg_secondary"],
         highlightbackground=theme.CURRENT_THEME["border"],
-        highlightthickness=1,
+        highlightthickness=2,
     )
     self.mixput_preferences_container.pack(
         fill=tk.BOTH, expand=True, padx=5, pady=5, side=tk.TOP

@@ -99,7 +99,7 @@ class App(tk.Canvas):
             self.canvas,
             bg=theme.CURRENT_THEME["bg_secondary"],
             highlightbackground=theme.CURRENT_THEME["border"],
-            highlightthickness=1,
+            highlightthickness=2,
         )
         self.main_content.pack(
             padx=5,
@@ -136,8 +136,6 @@ class App(tk.Canvas):
         )
         self.mixput_preferences_label.pack(side=tk.TOP, anchor=tk.W, padx=5, pady=5)
         self.mixput = create_mixput_frame(self.main_content)
-
-        
 
     def toggle_theme(self):
         self.DARK_THEME = not self.DARK_THEME
