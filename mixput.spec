@@ -7,9 +7,10 @@ ROOT = Path(SPECPATH)
 
 a = Analysis(
     [str(ROOT / "src" / "main.py")],
-    pathex=[str(ROOT)],
+    pathex=[str(ROOT), str(ROOT / "src")],
     binaries=[],
     datas=[
+        (str(ROOT / "public" / "assets" / "mixput.ico"), "public/assets"),
         (str(ROOT / "public" / "assets" / "mixput-ico.png"), "public/assets"),
         (str(ROOT / "public" / "assets" / "mixput.png"), "public/assets"),
         (str(ROOT / "public" / "assets" / "drawing-1.svg"), "public/assets"),
