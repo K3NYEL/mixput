@@ -2,7 +2,6 @@ altgraph==0.17.5
 certifi==2026.10.23
 charset-normalizer==3.5.2
 idna==3.20
--e git+https://github.com/Under-our-Eyes/mixput.git@50f55e1f4e900eafb5a17c95721cc7a62f2cc6c4#egg=mixput
 packaging==26.3
 pillow==13.0.0
 psutil==7.2.2
