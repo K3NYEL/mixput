@@ -1,40 +1,62 @@
-import socket 
-import psutil 
+import ipaddress
+import socket
 
-def get_active_network_info() -> tuple[str, str] | None:
+import psutil
+
+
+def _is_usable_ipv4(address: str) -> bool:
+    try:
+        parsed = ipaddress.ip_address(address)
+    except ValueError:
+        return False
+
+    return (
+        parsed.version == 4
+        and not parsed.is_loopback
+        and not parsed.is_link_local
+        and not parsed.is_unspecified
+        and not parsed.is_multicast
+    )
+
+
+def get_active_network_info() -> tuple[str, str]:
+    """Return the active interface and its IPv4 address without admin rights.
+
+    A UDP connect asks the local routing table which interface would be used.
+    It does not send application data to the remote host.
+    """
     stats = psutil.net_if_stats()
-    addrs = psutil.net_if_addrs()
-
+    addresses = psutil.net_if_addrs()
     preferred_ip = None
 
     try:
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-            s.connect(("8.8.8.8", 80))
-            preferred_ip = s.getsockname()[0]
-
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("1.1.1.1", 53))
+            preferred_ip = probe.getsockname()[0]
     except OSError:
         pass
 
-    for iface, addr_list in addrs.items():
-        iface_stats = stats.get(iface)
-        if not iface_stats or not iface_stats.isup:
+    candidates: list[tuple[str, str]] = []
+
+    for interface, interface_addresses in addresses.items():
+        interface_stats = stats.get(interface)
+        if not interface_stats or not interface_stats.isup:
             continue
 
-        for addr in addr_list:
-            if addr.family == socket.AF_INET:
-                ip_address = addr.address
-                if preferred_ip and ip_address == preferred_ip:
-                    return iface, ip_address
-                elif not preferred_ip:
-                    return iface, ip_address
+        for address in interface_addresses:
+            if address.family != socket.AF_INET:
+                continue
+            if not _is_usable_ipv4(address.address):
+                continue
 
-    for iface, addr_list in addrs.items():
-        iface_stats = stats.get(iface)
-        if not iface_stats or not iface_stats.isup:
-            continue
+            candidates.append((interface, address.address))
 
-        for addr in addr_list:
-            if addr.family == socket.AF_INET:
-                return iface, addr.address
+    if preferred_ip:
+        for interface, address in candidates:
+            if address == preferred_ip:
+                return interface, address
+
+    if candidates:
+        return candidates[0]
 
     return "Sin conexión", "0.0.0.0"
