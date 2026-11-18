@@ -42,14 +42,14 @@ jobs:
         run: |
           pyinstaller --clean --noconfirm mixput.spec
 
-      - name: Package archive
+      - name: Package release
         shell: bash
         run: |
           mkdir -p dist/packages
           if [ "${{ runner.os }}" = "Windows" ]; then
-            powershell -Command "Compress-Archive -Path 'dist/mixput/*' -DestinationPath 'dist/packages/mixput-windows-x64.zip' -Force"
+            powershell -Command "Compress-Archive -Path 'dist/mixput.exe' -DestinationPath 'dist/packages/mixput-windows-x64.zip' -Force"
           else
-            (cd dist/mixput && zip -r ../packages/mixput-linux-x64.zip .)
+            zip -j "dist/packages/mixput-linux-x64.zip" "dist/mixput"
           fi
 
       - name: Upload package artifact
