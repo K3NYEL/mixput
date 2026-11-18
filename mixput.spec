@@ -5,7 +5,9 @@ a = Analysis(
     ['src/main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('public/assets/mixput-ico.png, 'assets')
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -35,5 +37,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon="public/assets/mixput.png",
+    icon="public/assets/mixput-ico.png",
 )
