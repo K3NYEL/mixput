@@ -1,6 +1,6 @@
-
 # -*- mode: python ; coding: utf-8 -*-
 
+import sys
 from pathlib import Path
 
 ROOT = Path(SPECPATH)
@@ -39,5 +39,5 @@ exe = EXE(
     upx=True,
     console=False,
     disable_windowed_traceback=False,
-    icon=str(ROOT / "public" / "assets" / "mixput.ico"),
+    icon=str(ROOT / "public" / "assets" / "mixput.ico") if sys.platform == "win32" else None,
 )

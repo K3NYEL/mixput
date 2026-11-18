@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Mixput
+Comment=Mixput desktop application
+Exec=/usr/bin/mixput
+Icon=mixput
+Terminal=false
+Categories=Utility;
+StartupNotify=true
