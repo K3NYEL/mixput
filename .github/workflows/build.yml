@@ -44,6 +44,15 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
 
+      - name: Resolve application version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          python -c "import os,tomllib; e=os.environ; v=e['INPUT_TAG'] if e['EVENT_NAME']=='workflow_dispatch' else e['REF_NAME'] if e['EVENT_NAME']=='push' else tomllib.load(open('pyproject.toml','rb'))['project']['version']; open(e['GITHUB_OUTPUT'],'a').write('value='+v.removeprefix('v')+'\\n')"
+
       - name: Install application and build dependencies
         run: |
           python -m pip install --upgrade pip
@@ -59,16 +68,16 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         env:
-          APP_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          APP_VERSION: ${{ steps.version.outputs.value }}
         run: |
-          $version = $env:APP_VERSION -replace '^v', ''
+          $version = $env:APP_VERSION
           $iscc = Get-Command ISCC.exe -ErrorAction SilentlyContinue
           if (-not $iscc) {
             choco install innosetup --no-progress -y
             $iscc = Get-Command ISCC.exe -ErrorAction SilentlyContinue
           }
           if (-not $iscc) {
-            $candidate = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+            $candidate = "${env:ProgramFiles(x86)}\\Inno Setup 6\\ISCC.exe"
             if (Test-Path $candidate) { $iscc = @{ Source = $candidate } }
           }
           if (-not $iscc) { throw "Inno Setup compiler (ISCC.exe) was not found." }
@@ -80,10 +89,9 @@ jobs:
         if: matrix.platform == 'linux'
         shell: bash
         env:
-          APP_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          APP_VERSION: ${{ steps.version.outputs.value }}
         run: |
-          version="${APP_VERSION#v}"
-          bash installer/linux/build-deb.sh "$version" "dist/mixput" "dist/packages"
+          bash installer/linux/build-deb.sh "$APP_VERSION" "dist/mixput" "dist/packages"
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
