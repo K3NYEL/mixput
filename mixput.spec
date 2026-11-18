@@ -1,12 +1,18 @@
+
 # -*- mode: python ; coding: utf-8 -*-
 
+from pathlib import Path
+
+ROOT = Path(SPECPATH)
 
 a = Analysis(
-    ['src/main.py'],
-    pathex=[],
+    [str(ROOT / "src" / "main.py")],
+    pathex=[str(ROOT)],
     binaries=[],
     datas=[
-        ('public/assets/mixput-ico.png, 'assets')
+        (str(ROOT / "public" / "assets" / "mixput-ico.png"), "public/assets"),
+        (str(ROOT / "public" / "assets" / "mixput.png"), "public/assets"),
+        (str(ROOT / "public" / "assets" / "drawing-1.svg"), "public/assets"),
     ],
     hiddenimports=[],
     hookspath=[],
@@ -16,6 +22,7 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -24,18 +31,12 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='mixput',
+    name="mixput",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon="public/assets/mixput-ico.png",
+    icon=str(ROOT / "public" / "assets" / "mixput.ico"),
 )

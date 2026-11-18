@@ -24,10 +24,11 @@ class MainWindows(tk.Tk):
 
     def _set_window_icon(self):
         icon_file = self.resource_path("public/assets/mixput-ico.png")
+
         if icon_file.exists():
-            img = Image.open(icon_file)
-            self._icon_photo = ImageTk.PhotoImage(img)
-            self.iconphoto(True, self._icon_photo)
+            with Image.open(icon_file) as img:
+                self._icon_photo = ImageTk.PhotoImage(img.copy())
+                self.iconphoto(True, self._icon_photo)
 
     def windows_center(self, width, height):
         screen_width = self.winfo_screenwidth()
