@@ -1,10 +1,13 @@
 import tkinter as tk
-import threading 
+import threading
 from tkinter_icons import LucideIcon
 
 from app.components import theme
+from .ui.system_frame import create_system_preferences
+from .ui.mixput_frame import create_mixput_frame
 from .core.updater import *
 from .core.updater import obtain_version
+
 class App(tk.Canvas):
     def __init__(self):
         super().__init__()
@@ -13,7 +16,7 @@ class App(tk.Canvas):
         self.DARK_THEME = False
         self.CURRENT_THEME = self.theme.LIGHT_THEME
         self.create_widgets()
-
+        self.create_main_content()
         self.moon_icon = LucideIcon(
             "moon", size=20, color=self.CURRENT_THEME["text_primary"]
         )
@@ -23,6 +26,7 @@ class App(tk.Canvas):
 
     def start_update_check(self, on_update_available):
         self.check_update = check_for_update()
+
         def worker():
             info = self.check_update
             if info:
@@ -58,7 +62,7 @@ class App(tk.Canvas):
 
         self.lbl_title = tk.Label(
             self.nav_frame,
-            text="Mixput",
+            text=f"Mixput v{self.current_version}",
             font=("Arial", 16),
             bg=theme.CURRENT_THEME["bg_secondary"],
             fg=theme.CURRENT_THEME["text_primary"],
@@ -88,20 +92,52 @@ class App(tk.Canvas):
             anchor=tk.N,
         )
 
-        self.frame = tk.Frame(
+    def create_main_content(self):
+        
+        # Contenedor principal
+        self.main_content = tk.Frame(
             self.canvas,
-            width=200,
-            height=200,
             bg=theme.CURRENT_THEME["bg_secondary"],
             highlightbackground=theme.CURRENT_THEME["border"],
             highlightthickness=1,
         )
-        self.frame.pack(
+        self.main_content.pack(
             padx=5,
-            fill="x",
+            pady=5,
+            fill=tk.BOTH,
+            expand=True,
             side=tk.TOP,
             anchor=tk.N,
         )
+
+        # 1. Encabezado arriba
+        self.header_frame = tk.Frame(
+            self.main_content,
+            bg=theme.CURRENT_THEME["bg_secondary"],
+        )
+        self.header_frame.pack(fill="x", padx=5, pady=(5, 0), side=tk.TOP)
+
+        self.system_preferences_label = tk.Label(
+            self.header_frame,
+            text="System Preferences",
+            font=("Arial", 14),
+            bg=theme.CURRENT_THEME["bg_secondary"],
+            fg=theme.CURRENT_THEME["text_primary"],
+        )
+        self.system_preferences_label.pack(side=tk.LEFT, anchor=tk.W)
+        self.system = create_system_preferences(self.main_content)
+
+        self.mixput_preferences_label = tk.Label(
+            self.main_content,
+            text="Mixput Preferences",
+            font=("Arial", 14),
+            bg=theme.CURRENT_THEME["bg_secondary"],
+            fg=theme.CURRENT_THEME["text_primary"],
+        )
+        self.mixput_preferences_label.pack(side=tk.TOP, anchor=tk.W, padx=5, pady=5)
+        self.mixput = create_mixput_frame(self.main_content)
+
+        
 
     def toggle_theme(self):
         self.DARK_THEME = not self.DARK_THEME
@@ -120,9 +156,12 @@ class App(tk.Canvas):
 
         self.config(bg=t["bg_main"])
         self.canvas.config(bg=t["bg_main"])
-        self.frame.config(bg=t["bg_secondary"])
         self.nav_frame.config(bg=t["bg_secondary"])
+        self.main_content.config(bg=t["bg_secondary"])
         self.lbl_title.config(bg=t["bg_secondary"], fg=t["text_primary"])
+        self.header_frame.config(bg=t["bg_secondary"])
+        self.system_preferences_label.config(bg=t["bg_secondary"], fg=t["text_primary"])
+        self.mixput_preferences_label.config(bg=t["bg_secondary"], fg=t["text_primary"])
         self.theme_button.config(
             bg=t["bg_secondary"],
             fg=t["text_primary"],
