@@ -5,7 +5,6 @@ from PIL import Image, ImageTk
 
 from app.components import theme, App
 
-
 class MainWindows(tk.Tk):
     def __init__(self):
         super().__init__()
