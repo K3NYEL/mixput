@@ -170,5 +170,73 @@ class NetworkIntegrationTests(unittest.TestCase):
         self.assertFalse(self.client_connected.is_set())
 
 
+
+    def test_three_remote_devices_horizontal_handoff_chat_and_capacity(self):
+        self._start_server()
+        chat_received = threading.Event()
+        received_messages = []
+
+        def make_client(label, on_chat=None):
+            backend = RecordingInputBackend()
+            client = NetworkClient(
+                on_status=lambda status: None,
+                on_chat=on_chat,
+                input_backend=backend,
+                pairing_store=PairingStore(Path(self.temp.name) / f"{label}.json"),
+            )
+            return client, backend
+
+        second_chat = threading.Event()
+        third, third_backend = make_client("third", lambda message: (
+            received_messages.append(message), second_chat.set()
+        ))
+        second, second_backend = make_client("second")
+        self.assertTrue(self.client.connect("127.0.0.1", self.port))
+        self._wait(self.client_connected, "first remote device")
+        self.assertTrue(second.connect("127.0.0.1", self.port))
+        deadline = time.monotonic() + 5
+        while not second.running and time.monotonic() < deadline:
+            time.sleep(0.01)
+        deadline = time.monotonic() + 5
+        while len(self.server.connected_devices) < 3 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(len(self.server.connected_devices), 3)
+        deadline = time.monotonic() + 5
+        while len(self.client._devices) < 3 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(len(self.client._devices), 3)
+        self.assertTrue(third.connect("127.0.0.1", self.port))
+        deadline = time.monotonic() + 5
+        while len(self.server.connected_devices) < 4 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(len(self.server.connected_devices), 4)
+
+        self.server._on_local_edge("right")
+        deadline = time.monotonic() + 5
+        while self.server._control_owner != self.client.pairings.device_id and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(self.server._control_owner, self.client.pairings.device_id)
+        self.client._on_local_edge("right")
+        deadline = time.monotonic() + 5
+        while self.server._control_owner != second.pairings.device_id and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(self.server._control_owner, second.pairings.device_id)
+
+        self.assertTrue(second.send_chat("hello from device two"))
+        self._wait(second_chat, "group chat delivery to third device")
+        self.assertEqual(received_messages[-1]["text"], "hello from device two")
+
+        overflow, _ = make_client("overflow")
+        self.assertTrue(overflow.connect("127.0.0.1", self.port))
+        deadline = time.monotonic() + 5
+        while overflow.running and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertFalse(overflow.running)
+        self.assertEqual(len(self.server.connected_devices), 4)
+
+        overflow.disconnect()
+        third.disconnect()
+        second.disconnect()
+
 if __name__ == "__main__":
     unittest.main()

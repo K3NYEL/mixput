@@ -21,16 +21,20 @@ class ServerPreferences(tk.Frame):
         # The host is arranged to the left of the remote desktop:
         # right edge enters the remote machine; its left edge returns.
         self.host_input.configure_edge_switch("right", screen_size)
-        self.remote_input.configure_edge_switch("left", screen_size)
+        self.remote_input.configure_edge_switch(("left", "right"), screen_size)
         self.server = NetworkServer(
             on_log=self._queue_log,
             on_status=self._queue_server_status,
             on_pairing_request=self._queue_pairing_request,
+            on_chat=self._queue_chat,
+            on_devices=self._queue_server_devices,
         )
         self.server.set_input_backend(self.host_input)
         self.client = NetworkClient(
             on_message=self._queue_log,
             on_status=self._queue_client_status,
+            on_chat=self._queue_chat,
+            on_session=self._queue_session,
             input_backend=self.remote_input,
         )
         self._server_status = "stopped"
@@ -83,7 +87,7 @@ class ServerPreferences(tk.Frame):
         self.stop_button.pack(side=tk.LEFT)
 
         tk.Label(
-            host_frame, text="Authorized devices", bg=c["bg_secondary"],
+            host_frame, text="Authorized devices (up to 3 connected)", bg=c["bg_secondary"],
             fg=c["text_secondary"], font=("Arial", 8, "bold")
         ).pack(anchor=tk.W)
         self.authorized_list = tk.Listbox(
@@ -115,7 +119,7 @@ class ServerPreferences(tk.Frame):
         self.client_port.pack(side=tk.RIGHT)
 
         tk.Label(
-            client_frame, text="After connecting: move to the host's right edge to enter this laptop; move to this laptop's left edge to return.",
+            client_frame, text="Devices form a horizontal row. Move to the left or right edge to switch to the neighboring computer. Maximum: 4 devices including the server.",
             bg=c["bg_secondary"], fg=c["text_secondary"],
             font=("Arial", 8), wraplength=260, justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(0, 10))
@@ -132,6 +136,32 @@ class ServerPreferences(tk.Frame):
             anchor=tk.W, bg=c["bg_main"], fg=c["text_secondary"], padx=12, pady=9
         )
         self.status_label.pack(fill=tk.X, padx=12, pady=(0, 8))
+        self.devices_label = tk.Label(
+            self, text="Session row: this computer → waiting for devices",
+            bg=c["bg_secondary"], fg=c["text_secondary"], font=("Arial", 8),
+            anchor=tk.W,
+        )
+        self.devices_label.pack(fill=tk.X, padx=14, pady=(0, 6))
+
+        chat_frame = tk.LabelFrame(
+            self, text=" GROUP CHAT ", bg=c["bg_secondary"],
+            fg=c["text_primary"], padx=8, pady=6, font=("Arial", 9, "bold")
+        )
+        chat_frame.pack(fill=tk.X, padx=12, pady=(0, 8))
+        self.chat_box = tk.Text(
+            chat_frame, height=5, wrap=tk.WORD, state=tk.DISABLED,
+            bg=c["bg_main"], fg=c["text_primary"], relief=tk.FLAT,
+            font=("Arial", 9), padx=7, pady=5,
+        )
+        self.chat_box.pack(fill=tk.X, pady=(0, 5))
+        chat_entry_row = tk.Frame(chat_frame, bg=c["bg_secondary"])
+        chat_entry_row.pack(fill=tk.X)
+        self.chat_entry = self._entry(chat_entry_row, "", 36)
+        self.chat_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+        self.chat_entry.bind("<Return>", lambda _event: self.send_chat())
+        self.chat_send_button = self._button(chat_entry_row, "Send", self.send_chat)
+        self.chat_send_button.pack(side=tk.RIGHT)
+
         log_frame = tk.Frame(self, bg=c["bg_secondary"])
         log_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
         self.log_box = tk.Text(
@@ -144,6 +174,51 @@ class ServerPreferences(tk.Frame):
         self.log_box.configure(yscrollcommand=scrollbar.set)
         self.log_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(8, 0), pady=(0, 8))
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 8), pady=(0, 8))
+
+
+    def _queue_chat(self, message):
+        try:
+            self.after(0, self._append_chat, message)
+        except tk.TclError:
+            pass
+
+    def _append_chat(self, message):
+        try:
+            sender = str(message.get("sender", "Device"))[:64]
+            text = str(message.get("text", ""))[:1000]
+            self.chat_box.configure(state=tk.NORMAL)
+            self.chat_box.insert(tk.END, f"{sender}: {text}" + chr(10))
+            self.chat_box.see(tk.END)
+            self.chat_box.configure(state=tk.DISABLED)
+        except (tk.TclError, AttributeError):
+            pass
+
+    def _queue_server_devices(self, devices):
+        self._queue_session({"devices": devices, "owner": "host"})
+
+    def _queue_session(self, state):
+        try:
+            self.after(0, self._apply_session, state)
+        except tk.TclError:
+            pass
+
+    def _apply_session(self, state):
+        devices = state.get("devices", [])
+        if not devices:
+            self.devices_label.configure(text="Session row: this computer → waiting for devices")
+            return
+        names = [str(item.get("name", "Device")) for item in sorted(devices, key=lambda d: d.get("index", 0))]
+        self.devices_label.configure(text="Session row: " + "  →  ".join(names))
+
+    def send_chat(self):
+        text = self.chat_entry.get().strip()
+        if not text:
+            return
+        sent = self.server.send_chat(text) if self._server_status in ("listening", "connected", "pairing", "authenticating") else self.client.send_chat(text)
+        if sent:
+            self.chat_entry.delete(0, tk.END)
+        else:
+            self._queue_log("[Mixput] Chat is unavailable or the message exceeds 1000 characters.")
 
     def _entry(self, parent, value, width):
         widget = tk.Entry(
