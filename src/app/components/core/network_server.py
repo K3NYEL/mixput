@@ -94,7 +94,7 @@ class NetworkServer:
 
     def _handle_peer(self, connection, address, pairing_key):
         channel = None
-        connection.settimeout(1.0)
+        connection.settimeout(8.0)
         try:
             channel = SecureChannel(connection, pairing_key)
             with self._lock:
@@ -105,6 +105,7 @@ class NetworkServer:
             if not hello or hello.get("version") != PROTOCOL_VERSION or hello.get("kind") != "hello":
                 raise ProtocolError("Invalid peer handshake.")
             channel.send({"version": PROTOCOL_VERSION, "kind": "hello_ack"})
+            connection.settimeout(1.0)
             self.on_status("connected")
             self.on_log(f"[Mixput] Paired laptop connected: {address[0]}")
             if self._capture is None:
