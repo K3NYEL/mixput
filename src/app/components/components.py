@@ -536,6 +536,9 @@ class App(tk.Canvas):
                                    relief=tk.FLAT, bg=colors["bg_secondary"],
                                    fg=colors["text_secondary"], font=("Consolas", 8), wrap=tk.WORD)
         self._update_log.pack(fill=tk.X, pady=(12, 0))
+        self._update_log.configure(state=tk.NORMAL)
+        self._update_log.insert(tk.END, "Diagnostic log: " + str(get_update_log_path()) + "\\n")
+        self._update_log.configure(state=tk.DISABLED)
         self._update_window = window
         window.update_idletasks()
         window.geometry("+%d+%d" % (self.winfo_rootx() + 80, self.winfo_rooty() + 80))
