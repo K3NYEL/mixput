@@ -17,6 +17,7 @@ class RecordingInputBackend:
         self.events = []
         self.event_received = threading.Event()
         self.capture_enabled = False
+        self.exclusive_enabled = False
 
     def start_capture(self):
         self.started.set()
@@ -29,6 +30,10 @@ class RecordingInputBackend:
 
     def set_relative_mode(self, enabled):
         self.relative_mode = bool(enabled)
+
+    def set_exclusive_capture(self, enabled):
+        self.exclusive_enabled = bool(enabled)
+        return True
 
     def park_cursor(self):
         self.parked = True
@@ -183,6 +188,7 @@ class NetworkIntegrationTests(unittest.TestCase):
 
         self.assertTrue(self.server.set_local_mode(True))
         self.assertTrue(self.server.local_mode)
+        self.assertFalse(self.host_backend.exclusive_enabled)
         self.assertFalse(self.client.local_mode)
         self.assertTrue(self.client.running)
         self.assertTrue(self.server.running)
@@ -200,6 +206,7 @@ class NetworkIntegrationTests(unittest.TestCase):
         self.assertEqual(self.receiver_backend.events, [])
 
         self.assertTrue(self.client.set_local_mode(False))
+        self.assertTrue(self.host_backend.exclusive_enabled)
         self.server._send_input({"type": "key_down", "key": "b"})
         self._wait(self.receiver_backend.event_received, "input after returning to shared mode")
         self.assertEqual(self.receiver_backend.events, [{"type": "key_down", "key": "b"}])

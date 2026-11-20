@@ -167,7 +167,21 @@ class NetworkServer:
             devices = self._device_snapshot_locked()
         if self._capture:
             self._capture.release_all()
-            self._capture.set_exclusive_capture(device_id != "host" and not self.local_mode)
+            exclusive_ok = self._capture.set_exclusive_capture(
+                device_id != "host" and not self.local_mode
+            )
+            if device_id != "host" and not self.local_mode and not exclusive_ok:
+                with self._lock:
+                    self._ownership.force(old)
+                    rollback_epoch = self._ownership_epoch
+                    rollback_devices = self._device_snapshot_locked()
+                    rollback_peers = list(self._peers.values())
+                self._capture.set_relative_mode(old != "host")
+                self._capture.set_exclusive_capture(old != "host" and not self.local_mode)
+                for rollback_peer in rollback_peers:
+                    self._send_state(rollback_peer, rollback_devices, old, ownership_epoch=rollback_epoch)
+                self.on_log("[Mixput] Could not obtain exclusive input capture; control transfer was cancelled.")
+                return False
             self._capture.set_relative_mode(device_id != "host")
             if device_id == "host" and enter_edge:
                 self._capture.warp_to_edge(enter_edge)

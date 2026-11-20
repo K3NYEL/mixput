@@ -192,9 +192,12 @@ class InputBackend:
 
     def set_exclusive_capture(self, enabled):
         with self._lock:
-            self._exclusive_enabled = bool(enabled and self._capture_enabled)
-            if self._x11_grabber:
-                self._x11_grabber.set_grab(self._exclusive_enabled)
+            requested = bool(enabled and self._capture_enabled)
+            if self._x11_grabber and not self._x11_grabber.set_grab(requested):
+                self._exclusive_enabled = False
+                return False
+            self._exclusive_enabled = requested
+            return True
 
     def set_relative_mode(self, enabled):
         with self._lock:
@@ -244,6 +247,9 @@ class InputBackend:
             self._keyboard_listener = None
             self._mouse_listener = None
             self._capture_enabled = False
+            self._exclusive_enabled = False
+            if self._x11_grabber:
+                self._x11_grabber.set_grab(False)
             self._last_position = None
         for listener in listeners:
             if listener:

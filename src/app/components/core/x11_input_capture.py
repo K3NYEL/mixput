@@ -81,6 +81,9 @@ class X11GrabController:
                     self._active = grabbed_pointer and grabbed_keyboard
                     self._applied.set()
 
+                if self._active == desired:
+                    self._applied.set()
+
                 if grabbed_pointer or grabbed_keyboard:
                     ready, _, _ = select.select([display.fileno()], [], [], 0.05)
                     if ready:
