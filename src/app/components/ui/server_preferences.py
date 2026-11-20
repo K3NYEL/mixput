@@ -30,6 +30,7 @@ class ServerPreferences(tk.Frame):
         )
         self._server_status = "stopped"
         self._client_status = "disconnected"
+        self._active_port = 8080
         self.on_sharing_changed = lambda sharing, port: None
         self._build()
 
@@ -195,6 +196,7 @@ class ServerPreferences(tk.Frame):
             messagebox.showerror("Network unavailable", "Connect this laptop to a local network first.", parent=self)
             return
         if self.server.start("0.0.0.0", port):
+            self._active_port = port
             self.on_sharing_changed(True, port)
             self.start_button.configure(state=tk.DISABLED)
             self.stop_button.configure(state=tk.NORMAL)
@@ -202,7 +204,7 @@ class ServerPreferences(tk.Frame):
 
     def stop_server(self):
         self.server.stop()
-        self.on_sharing_changed(False, self._read_port(self.server_port))
+        self.on_sharing_changed(False, self._active_port)
         self.start_button.configure(state=tk.NORMAL)
         self.stop_button.configure(state=tk.DISABLED)
 
@@ -265,6 +267,7 @@ class ServerPreferences(tk.Frame):
     def _apply_server_status(self, status):
         self._server_status = status
         active = status in ("listening", "authenticating", "connected")
+        self.on_sharing_changed(active, self._active_port)
         self.start_button.configure(state=tk.DISABLED if active else tk.NORMAL)
         self.stop_button.configure(state=tk.NORMAL if active else tk.DISABLED)
         self._refresh_status()
@@ -328,7 +331,7 @@ class ServerPreferences(tk.Frame):
     def destroy(self):
         self.client.disconnect()
         self.server.stop()
-        self.on_sharing_changed(False, 8080)
+        self.on_sharing_changed(False, self._active_port)
         self.host_input.close()
         self.remote_input.close()
         super().destroy()
