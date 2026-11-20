@@ -223,6 +223,16 @@ class NetworkIntegrationTests(unittest.TestCase):
         while self.server._control_owner != self.client.pairings.device_id and time.monotonic() < deadline:
             time.sleep(0.01)
         self.assertEqual(self.server._control_owner, self.client.pairings.device_id)
+
+        # The server changes ownership before the receiver thread processes the
+        # session_state message. Wait for that state to arrive before simulating
+        # the receiver crossing its edge; otherwise the test races the network
+        # reader and may drop a valid handoff attempt.
+        deadline = time.monotonic() + 5
+        while self.client._control_owner != self.client.pairings.device_id and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(self.client._control_owner, self.client.pairings.device_id)
+
         self.client._on_local_edge("right")
         deadline = time.monotonic() + 5
         while self.server._control_owner != second.pairings.device_id and time.monotonic() < deadline:
