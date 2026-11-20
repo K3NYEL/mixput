@@ -23,6 +23,13 @@ class RecordingInputBackend:
     def stop_capture(self):
         self.stopped.set()
 
+    def set_capture_enabled(self, enabled):
+        self.capture_enabled = bool(enabled)
+
+    def warp_to_edge(self, side):
+        self.warped_to = side
+        return True
+
     def apply_event(self, event):
         self.events.append(event)
         self.event_received.set()
