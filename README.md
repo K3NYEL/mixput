@@ -43,8 +43,20 @@ The input backend uses `pynput`. Windows and Linux X11 are the initial desktop
 targets. Wayland-only sessions are currently reported as unavailable because
 global input capture/injection needs a desktop-portal implementation.
 
-## Development status
+## Validation and limitations
 
-The first end-to-end encrypted host-to-receiver input stream is implemented.
-Automatic device discovery, seamless cursor-edge transitions, Wayland portal
-support, packaging validation, and real two-laptop testing remain outstanding.
+The repository includes automated tests for encrypted transport, protocol input
+validation, and a loopback host-to-receiver session. CI runs these tests on both
+Windows and Linux before packaging.
+
+A loopback test does not replace testing with two physical laptops. Before
+treating a release as stable, verify the following on real devices:
+
+- Windows to Windows, Linux X11 to Linux X11, and mixed Windows/Linux sessions.
+- Keyboard layout, modifiers, function keys, mouse buttons, movement, and scroll.
+- Disconnect/reconnect behavior and recovery after the host stops sharing.
+- Firewall prompts, LAN address selection, and installer behavior on clean systems.
+
+Automatic device discovery, seamless cursor-edge transitions, and Linux Wayland
+portal support are not implemented. Input forwarding remains one-way: the host
+controls the receiver after explicit pairing.

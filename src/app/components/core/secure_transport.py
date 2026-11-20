@@ -1,5 +1,6 @@
-"""Authenticated encrypted TCP channel with per-direction sequence numbers."""
+# Authenticated encrypted TCP channel with per-direction sequence numbers.
 import json
+import socket
 import threading
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -8,7 +9,7 @@ from app.components.core.input_protocol import MAX_MESSAGE_BYTES, ProtocolError
 
 
 class SecureChannel:
-    """Fernet encryption, integrity checks, framing, and replay ordering."""
+    # Fernet encryption, integrity checks, framing, and replay ordering.
 
     def __init__(self, connection, token):
         try:
@@ -30,7 +31,7 @@ class SecureChannel:
             payload = json.dumps(envelope, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
             if len(payload) > MAX_MESSAGE_BYTES:
                 raise ProtocolError("Message exceeds the protocol size limit.")
-            encrypted = self._cipher.encrypt(payload) + b"\\n"
+            encrypted = self._cipher.encrypt(payload) + b"\n"
             self._socket.sendall(encrypted)
             self._send_sequence += 1
         return True
