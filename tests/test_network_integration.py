@@ -131,28 +131,27 @@ class NetworkIntegrationTests(unittest.TestCase):
 
         self.server._on_local_edge("right")
         deadline = time.monotonic() + 5
-        while not self.receiver_backend.capture_enabled and time.monotonic() < deadline:
+        while self.server._control_owner != self.client.pairings.device_id and time.monotonic() < deadline:
             time.sleep(0.01)
-        self.assertTrue(self.receiver_backend.capture_enabled)
-        self.assertFalse(self.host_backend.capture_enabled)
-
-        self.client._on_local_edge("left")
-        deadline = time.monotonic() + 5
-        while not self.host_backend.capture_enabled and time.monotonic() < deadline:
-            time.sleep(0.01)
+        self.assertEqual(self.server._control_owner, self.client.pairings.device_id)
         self.assertTrue(self.host_backend.capture_enabled)
         self.assertFalse(self.receiver_backend.capture_enabled)
 
-        self.server._on_local_edge("right")
-        deadline = time.monotonic() + 5
-        while not self.receiver_backend.capture_enabled and time.monotonic() < deadline:
-            time.sleep(0.01)
-        self.assertTrue(self.receiver_backend.capture_enabled)
-
         event = {"type": "key_down", "key": "a"}
-        self.client._send_input(event)
-        self._wait(self.host_backend.event_received, "reverse input forwarding")
-        self.assertEqual(self.host_backend.events, [event])
+        self.server._send_input(event)
+        self._wait(self.receiver_backend.event_received, "host input routed to active receiver")
+        self.assertEqual(self.receiver_backend.events, [event])
+
+        deadline = time.monotonic() + 5
+        while self.client._control_owner != self.client.pairings.device_id and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.client._on_local_edge("left")
+        deadline = time.monotonic() + 5
+        while self.server._control_owner != "host" and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(self.server._control_owner, "host")
+        self.assertTrue(self.host_backend.capture_enabled)
+        self.assertFalse(self.receiver_backend.capture_enabled)
 
     def test_revoked_device_must_request_approval_again(self):
         self._start_server()

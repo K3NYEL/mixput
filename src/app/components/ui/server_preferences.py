@@ -40,6 +40,10 @@ class ServerPreferences(tk.Frame):
         self._server_status = "stopped"
         self._client_status = "disconnected"
         self._active_port = 8080
+        self.chat_messages = []
+        self.on_chat_message = lambda message: None
+        self.on_state_changed = lambda state: None
+        self.on_activity = lambda message: None
         self.on_sharing_changed = lambda sharing, port: None
         self._build()
 
@@ -143,25 +147,6 @@ class ServerPreferences(tk.Frame):
         )
         self.devices_label.pack(fill=tk.X, padx=14, pady=(0, 6))
 
-        chat_frame = tk.LabelFrame(
-            self, text=" GROUP CHAT ", bg=c["bg_secondary"],
-            fg=c["text_primary"], padx=8, pady=6, font=("Arial", 9, "bold")
-        )
-        chat_frame.pack(fill=tk.X, padx=12, pady=(0, 8))
-        self.chat_box = tk.Text(
-            chat_frame, height=5, wrap=tk.WORD, state=tk.DISABLED,
-            bg=c["bg_main"], fg=c["text_primary"], relief=tk.FLAT,
-            font=("Arial", 9), padx=7, pady=5,
-        )
-        self.chat_box.pack(fill=tk.X, pady=(0, 5))
-        chat_entry_row = tk.Frame(chat_frame, bg=c["bg_secondary"])
-        chat_entry_row.pack(fill=tk.X)
-        self.chat_entry = self._entry(chat_entry_row, "", 36)
-        self.chat_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-        self.chat_entry.bind("<Return>", lambda _event: self.send_chat())
-        self.chat_send_button = self._button(chat_entry_row, "Send", self.send_chat)
-        self.chat_send_button.pack(side=tk.RIGHT)
-
         log_frame = tk.Frame(self, bg=c["bg_secondary"])
         log_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
         self.log_box = tk.Text(
@@ -178,23 +163,16 @@ class ServerPreferences(tk.Frame):
 
     def _queue_chat(self, message):
         try:
-            self.after(0, self._append_chat, message)
+            self.after(0, self._dispatch_chat, message)
         except tk.TclError:
             pass
 
-    def _append_chat(self, message):
-        try:
-            sender = str(message.get("sender", "Device"))[:64]
-            text = str(message.get("text", ""))[:1000]
-            self.chat_box.configure(state=tk.NORMAL)
-            self.chat_box.insert(tk.END, f"{sender}: {text}" + chr(10))
-            self.chat_box.see(tk.END)
-            self.chat_box.configure(state=tk.DISABLED)
-        except (tk.TclError, AttributeError):
-            pass
+    def _dispatch_chat(self, message):
+        self.chat_messages.append(message)
+        self.on_chat_message(message)
 
     def _queue_server_devices(self, devices):
-        self._queue_session({"devices": devices, "owner": "host"})
+        self._queue_session({"devices": devices, "owner": self.server._control_owner})
 
     def _queue_session(self, state):
         try:
@@ -209,16 +187,18 @@ class ServerPreferences(tk.Frame):
             return
         names = [str(item.get("name", "Device")) for item in sorted(devices, key=lambda d: d.get("index", 0))]
         self.devices_label.configure(text="Session row: " + "  →  ".join(names))
+        self.on_state_changed({
+            "devices": devices, "owner": state.get("owner", "host"),
+            "server_status": self._server_status, "client_status": self._client_status,
+            "port": self._active_port, "local_ip": self.local_ip,
+        })
 
-    def send_chat(self):
-        text = self.chat_entry.get().strip()
-        if not text:
-            return
-        sent = self.server.send_chat(text) if self._server_status in ("listening", "connected", "pairing", "authenticating") else self.client.send_chat(text)
-        if sent:
-            self.chat_entry.delete(0, tk.END)
-        else:
-            self._queue_log("[Mixput] Chat is unavailable or the message exceeds 1000 characters.")
+    def send_chat_message(self, text):
+        if self._server_status in ("listening", "connected", "pairing", "authenticating"):
+            return self.server.send_chat(text)
+        if self._client_status == "connected":
+            return self.client.send_chat(text)
+        return False
 
     def _entry(self, parent, value, width):
         widget = tk.Entry(
@@ -359,10 +339,9 @@ class ServerPreferences(tk.Frame):
             self.log_box.insert(tk.END, message + "\n")
             self.log_box.see(tk.END)
             self.log_box.configure(state=tk.DISABLED)
+            self.on_activity(str(message))
         except tk.TclError:
-            pass
-
-    def _queue_server_status(self, status):
+            pass(self, status):
         try:
             self.after(0, self._apply_server_status, status)
         except tk.TclError:
@@ -405,6 +384,14 @@ class ServerPreferences(tk.Frame):
         server = server_labels.get(self._server_status, self._server_status.title())
         client = client_labels.get(self._client_status, self._client_status.title())
         self.status_label.configure(text=f"{server}  ·  {client}")
+        devices = self.server.connected_devices if self.server.running else (
+            self.client._devices if self._client_status == "connected" else [])
+        owner = self.server._control_owner if self.server.running else self.client._control_owner
+        self.on_state_changed({
+            "devices": devices, "owner": owner,
+            "server_status": self._server_status, "client_status": self._client_status,
+            "port": self._active_port, "local_ip": self.local_ip,
+        })
 
     def apply_theme(self, colors):
         self.colors = colors
