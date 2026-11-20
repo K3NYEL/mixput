@@ -334,8 +334,11 @@ class ServerPreferences(tk.Frame):
     def _apply_client_status(self, status):
         self._client_status = status
         connected = status in ("connecting", "connected")
-        self.connect_button.configure(state=tk.DISABLED if connected else tk.NORMAL)
-        self.disconnect_button.configure(state=tk.NORMAL if connected else tk.DISABLED)
+        # Connection is server-only; client sessions are initiated from Devices.
+        if hasattr(self, "connect_button"):
+            self.connect_button.configure(state=tk.DISABLED if connected else tk.NORMAL)
+        if hasattr(self, "disconnect_button"):
+            self.disconnect_button.configure(state=tk.NORMAL if connected else tk.DISABLED)
         self._refresh_status()
 
     def _refresh_status(self):
