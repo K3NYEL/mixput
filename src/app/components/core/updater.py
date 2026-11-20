@@ -215,7 +215,7 @@ def consume_update_diagnostics() -> str | None:
         return None
     try:
         lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
-        last_error = max((i for i, line in enumerate(lines) if "ERROR" in line.upper()), default=-1)
+        last_error = max((i for i, line in enumerate(lines) if ("ERROR:" in line.upper() or "ERROR AT LINE" in line.upper())), default=-1)
         last_start = max((i for i, line in enumerate(lines) if "APPLICATION STARTED" in line), default=-1)
         details = None
         if last_error > last_start:
