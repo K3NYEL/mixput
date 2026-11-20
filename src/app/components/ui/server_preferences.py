@@ -3,7 +3,8 @@ from tkinter import messagebox
 
 from app.components import theme
 from app.components.core.network_client import NetworkClient
-from app.components.core.network_server import NetworkServer\nfrom app.components.core.input_backend import InputBackend
+from app.components.core.network_server import NetworkServer
+from app.components.core.input_backend import InputBackend
 
 
 class ServerPreferences(tk.Frame):
@@ -42,7 +43,17 @@ class ServerPreferences(tk.Frame):
             font=("Arial", 9),
             bg=c["bg_secondary"], fg=c["text_secondary"],
         )
-        description.pack(anchor=tk.W, padx=8, pady=(0, 5))\n\n        available, reason = InputBackend.availability()\n        self.input_backend_status = tk.Label(\n            self,\n            text=f"Local input backend: {reason if available else 'Unavailable — ' + reason}",\n            font=("Arial", 9),\n            bg=c["bg_secondary"],\n            fg=c["text_secondary"],\n        )\n        self.input_backend_status.pack(anchor=tk.W, padx=8, pady=(0, 5))
+        description.pack(anchor=tk.W, padx=8, pady=(0, 5))
+
+        available, reason = InputBackend.availability()
+        self.input_backend_status = tk.Label(
+            self,
+            text=f"Local input backend: {reason if available else 'Unavailable — ' + reason}",
+            font=("Arial", 9),
+            bg=c["bg_secondary"],
+            fg=c["text_secondary"],
+        )
+        self.input_backend_status.pack(anchor=tk.W, padx=8, pady=(0, 5))
 
         self.server_row = tk.Frame(self, bg=c["bg_secondary"])
         self.server_row.pack(fill=tk.X, padx=8, pady=2)
