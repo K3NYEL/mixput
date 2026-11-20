@@ -33,6 +33,33 @@ class VirtualNetworkManager:
     def network_cidr(self):
         return str(self.network)
 
+    def reserve(self, device_id, address):
+        """Restore an existing assignment while preventing address collisions."""
+        if not isinstance(device_id, str) or len(device_id) != 32:
+            raise ValueError("A valid persistent Mixput device identity is required.")
+        try:
+            parsed = ipaddress.ip_address(address)
+        except ValueError as error:
+            raise ValueError("Invalid Mixput virtual address.") from error
+        if (
+            parsed.version != 4
+            or parsed not in self.network
+            or parsed in (self.network.network_address, self.network.broadcast_address)
+            or parsed == HOST_VIRTUAL_IP
+        ):
+            raise ValueError("The address is not usable in the Mixput virtual network.")
+        address = str(parsed)
+        with self._lock:
+            current = self._by_device.get(device_id)
+            owner = self._by_address.get(address)
+            if current and current != address:
+                raise ValueError("The device already has another Mixput virtual address.")
+            if owner and owner != device_id:
+                raise ValueError("The Mixput virtual address is already assigned.")
+            self._by_device[device_id] = address
+            self._by_address[address] = device_id
+        return address
+
     def address_for(self, device_id):
         if not isinstance(device_id, str) or len(device_id) != 32:
             raise ValueError("A valid Mixput device identity is required.")
