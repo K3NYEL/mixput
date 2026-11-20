@@ -14,16 +14,23 @@ The current input-sharing session has one host and one receiver:
 
 The host laptop captures its local keyboard and mouse. The receiver laptop applies
 the events locally after a successful pairing handshake. This first implementation
-forwards input in one direction; seamless cursor-edge switching and automatic
-network discovery are not implemented yet.
+forwards input in one direction; seamless cursor-edge switching is not implemented.
 
 ## Connect two laptops
 
-1. Connect both laptops to the same trusted local network.
-2. On the host laptop, open Mixput Preferences and choose **Start sharing**.
-3. Share the displayed LAN IPv4 address, port, and pairing key with the receiver.
-4. On the receiver, enter the host LAN IP and pairing key, then choose **Connect**.
-5. Choose **Stop sharing** or **Disconnect** to end the session.
+1. Connect both laptops to the same trusted local network and open Mixput on both.
+2. Open **Devices** to see other Mixput instances discovered on the LAN.
+3. On the host laptop, choose **Start sharing** in **Connection**.
+4. Select the host in **Devices** and choose **Use selected device**. Its IP and port
+   are filled into the connection form.
+5. Enter the pairing key shown by the host and choose **Connect**.
+6. Choose **Stop** or **Disconnect** to end the session.
+
+Mixput sends a small UDP announcement on port 45821 every two seconds and expires
+devices that have not announced for eight seconds. The announcement contains only
+the Mixput protocol version, a temporary device identifier, computer name, TCP port,
+and whether sharing is active. It does not contain the pairing key or input events.
+Manual IP entry remains available if broadcast discovery is blocked by the network.
 
 The host listens on its network interfaces (0.0.0.0), but Mixput displays the
 active interface's real LAN IPv4 address for the other laptop. The receiver must
@@ -57,6 +64,8 @@ treating a release as stable, verify the following on real devices:
 - Disconnect/reconnect behavior and recovery after the host stops sharing.
 - Firewall prompts, LAN address selection, and installer behavior on clean systems.
 
-Automatic device discovery, seamless cursor-edge transitions, and Linux Wayland
-portal support are not implemented. Input forwarding remains one-way: the host
-controls the receiver after explicit pairing.
+Seamless cursor-edge transitions and Linux Wayland portal support are not
+implemented. Input forwarding remains one-way: the host controls the receiver
+after explicit pairing. UDP broadcast discovery can be blocked by guest Wi-Fi,
+client isolation, VLAN separation, or host firewall rules; in that case, use manual
+IP entry. The TCP sharing port still needs to be allowed by the firewall.
