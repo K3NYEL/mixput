@@ -274,33 +274,23 @@ class ServerPreferences(tk.Frame):
         self.stop_button.configure(state=tk.DISABLED)
 
     def connect_discovered_device(self, address, port):
-        self.set_discovered_device(address, port)
-        return self.connect_client()
-
-    def set_discovered_device(self, address, port):
-        self.client_host.delete(0, tk.END)
-        self.client_host.insert(0, address)
-        self.client_port.delete(0, tk.END)
-        self.client_port.insert(0, str(port))
-
-    def connect_client(self):
+        """Connect to a discovered host without adding client controls to Connection."""
         available, reason = InputBackend.availability()
         if not available:
             messagebox.showerror("Input support unavailable", reason, parent=self)
-            return
-        host = self.client_host.get().strip()
+            return False
         try:
-            port = self._read_port(self.client_port)
-            if not host:
-                raise ValueError("Select a nearby host or enter its LAN IP address.")
+            host = str(address).strip()
             parsed_host = ipaddress.ip_address(host)
             if parsed_host.version != 4:
                 raise ValueError("Only IPv4 LAN addresses are supported currently.")
-        except ValueError as error:
+            port = int(port)
+            if not 1 <= port <= 65535:
+                raise ValueError("Port must be between 1 and 65535.")
+        except (TypeError, ValueError) as error:
             messagebox.showerror("Connection settings", str(error), parent=self)
-            return
-        if self.client.connect(host, port):
-            self.connect_button.configure(state=tk.DISABLED)
+            return False
+        return self.client.connect(host, port)
 
     def disconnect_client(self):
         self.client.disconnect()
