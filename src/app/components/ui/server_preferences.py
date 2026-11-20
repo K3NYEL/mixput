@@ -34,107 +34,107 @@ class ServerPreferences(tk.Frame):
         c = self.colors
         self.configure(bg=c["bg_secondary"], highlightbackground=c["border"], highlightthickness=1)
 
-        tk.Label(
-            self, text="Share keyboard and mouse", font=("Arial", 12, "bold"),
-            bg=c["bg_secondary"], fg=c["text_primary"],
-        ).pack(anchor=tk.W, padx=8, pady=(7, 2))
-        tk.Label(
-            self,
-            text="Connect two laptops on the same local network. The host sends its input to the paired laptop.",
-            font=("Arial", 9), bg=c["bg_secondary"], fg=c["text_secondary"],
-            wraplength=650, justify=tk.LEFT,
-        ).pack(anchor=tk.W, padx=8, pady=(0, 7))
+        header = tk.Frame(self, bg=c["bg_secondary"])
+        header.pack(fill=tk.X, padx=16, pady=(14, 10))
+        tk.Label(header, text="Connect your computers", font=("Arial", 15, "bold"),
+                 bg=c["bg_secondary"], fg=c["text_primary"]).pack(anchor=tk.W)
+        tk.Label(header, text="Use one keyboard and mouse across two laptops on the same local network.",
+                 font=("Arial", 9), bg=c["bg_secondary"], fg=c["text_secondary"]).pack(anchor=tk.W, pady=(3, 0))
 
         available, reason = InputBackend.availability()
         self.backend_status = tk.Label(
-            self, text=f"Input support: {reason}", font=("Arial", 9),
-            bg=c["bg_secondary"], fg=c["text_secondary"],
-        )
-        self.backend_status.pack(anchor=tk.W, padx=8, pady=(0, 5))
-        if not available:
-            self.backend_status.configure(text=f"Input support unavailable: {reason}")
+            self, text=("Input control ready" if available else f"Input control unavailable: {reason}"),
+            font=("Arial", 9), bg=c["bg_secondary"],
+            fg=c["text_secondary"] if available else "#D65A65")
+        self.backend_status.pack(anchor=tk.W, padx=16, pady=(0, 8))
 
-        host_frame = tk.LabelFrame(
-            self, text="1. This laptop — share its keyboard and mouse",
-            bg=c["bg_secondary"], fg=c["text_primary"], padx=7, pady=5,
-        )
-        host_frame.pack(fill=tk.X, padx=8, pady=5)
+        cards = tk.Frame(self, bg=c["bg_secondary"])
+        cards.pack(fill=tk.X, padx=12, pady=(0, 8))
+        cards.columnconfigure(0, weight=1)
+        cards.columnconfigure(1, weight=1)
 
+        host_frame = tk.LabelFrame(cards, text=" SHARE THIS COMPUTER ",
+                                   bg=c["bg_secondary"], fg=c["text_primary"], padx=12, pady=10,
+                                   font=("Arial", 9, "bold"))
+        host_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
         interface, local_ip = get_active_network_info()
         self.local_ip = local_ip
-        self.local_ip_label = tk.Label(
-            host_frame, text=f"LAN address: {local_ip}   •   Interface: {interface}",
-            bg=c["bg_secondary"], fg=c["text_primary"], anchor=tk.W,
-        )
-        self.local_ip_label.pack(fill=tk.X, pady=(0, 4))
+        tk.Label(host_frame, text="Your local address", bg=c["bg_secondary"],
+                 fg=c["text_secondary"], font=("Arial", 8)).pack(anchor=tk.W)
+        self.local_ip_label = tk.Label(host_frame, text=f"{local_ip}  ·  {interface}",
+                                        bg=c["bg_secondary"], fg=c["text_primary"],
+                                        font=("Arial", 10, "bold"), anchor=tk.W)
+        self.local_ip_label.pack(fill=tk.X, pady=(2, 10))
 
-        host_controls = tk.Frame(host_frame, bg=c["bg_secondary"])
-        host_controls.pack(fill=tk.X)
-        tk.Label(host_controls, text="Port", bg=c["bg_secondary"], fg=c["text_primary"]).pack(side=tk.LEFT)
-        self.server_port = self._entry(host_controls, "8080", 7)
-        self.server_port.pack(side=tk.LEFT, padx=(5, 10))
-        self.start_button = self._button(host_controls, "Start sharing", self.start_server)
-        self.start_button.pack(side=tk.LEFT, padx=2)
-        self.stop_button = self._button(host_controls, "Stop sharing", self.stop_server)
+        port_row = tk.Frame(host_frame, bg=c["bg_secondary"])
+        port_row.pack(fill=tk.X, pady=(0, 8))
+        tk.Label(port_row, text="Port", bg=c["bg_secondary"], fg=c["text_secondary"]).pack(side=tk.LEFT)
+        self.server_port = self._entry(port_row, "8080", 8)
+        self.server_port.pack(side=tk.RIGHT)
+
+        host_actions = tk.Frame(host_frame, bg=c["bg_secondary"])
+        host_actions.pack(fill=tk.X, pady=(0, 8))
+        self.start_button = self._button(host_actions, "Start sharing", self.start_server)
+        self.start_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        self.stop_button = self._button(host_actions, "Stop", self.stop_server)
         self.stop_button.configure(state=tk.DISABLED)
-        self.stop_button.pack(side=tk.LEFT, padx=2)
-        tk.Label(
-            host_frame, text="Pairing key — share it only with the laptop you trust:",
-            bg=c["bg_secondary"], fg=c["text_secondary"], anchor=tk.W,
-        ).pack(fill=tk.X, pady=(7, 2))
+        self.stop_button.pack(side=tk.LEFT)
+
+        tk.Label(host_frame, text="Pairing key", bg=c["bg_secondary"],
+                 fg=c["text_secondary"], font=("Arial", 8)).pack(anchor=tk.W)
         key_row = tk.Frame(host_frame, bg=c["bg_secondary"])
-        key_row.pack(fill=tk.X)
-        self.host_key = self._entry(key_row, "", 48)
-        self.host_key.configure(state=tk.READONLY)
+        key_row.pack(fill=tk.X, pady=(3, 0))
+        self.host_key = self._entry(key_row, "", 24)
+        self.host_key.configure(state="readonly")
         self.host_key.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-        self.copy_key_button = self._button(key_row, "Copy key", self.copy_pairing_key)
+        self.copy_key_button = self._button(key_row, "Copy", self.copy_pairing_key)
         self.copy_key_button.pack(side=tk.RIGHT)
 
-        client_frame = tk.LabelFrame(
-            self, text="2. Other laptop — receive the shared input",
-            bg=c["bg_secondary"], fg=c["text_primary"], padx=7, pady=5,
-        )
-        client_frame.pack(fill=tk.X, padx=8, pady=5)
-        client_row = tk.Frame(client_frame, bg=c["bg_secondary"])
-        client_row.pack(fill=tk.X)
-        tk.Label(client_row, text="Host IP", bg=c["bg_secondary"], fg=c["text_primary"]).pack(side=tk.LEFT)
-        self.client_host = self._entry(client_row, "", 17)
-        self.client_host.pack(side=tk.LEFT, padx=(5, 8))
-        tk.Label(client_row, text="Port", bg=c["bg_secondary"], fg=c["text_primary"]).pack(side=tk.LEFT)
-        self.client_port = self._entry(client_row, "8080", 7)
-        self.client_port.pack(side=tk.LEFT, padx=(5, 8))
-        self.connect_button = self._button(client_row, "Connect", self.connect_client)
-        self.connect_button.pack(side=tk.LEFT, padx=2)
-        self.disconnect_button = self._button(client_row, "Disconnect", self.disconnect_client)
+        client_frame = tk.LabelFrame(cards, text=" CONNECT TO A COMPUTER ",
+                                     bg=c["bg_secondary"], fg=c["text_primary"], padx=12, pady=10,
+                                     font=("Arial", 9, "bold"))
+        client_frame.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+        tk.Label(client_frame, text="Host local IP address", bg=c["bg_secondary"],
+                 fg=c["text_secondary"], font=("Arial", 8)).pack(anchor=tk.W)
+        self.client_host = self._entry(client_frame, "", 24)
+        self.client_host.pack(fill=tk.X, pady=(3, 9))
+
+        connection_fields = tk.Frame(client_frame, bg=c["bg_secondary"])
+        connection_fields.pack(fill=tk.X, pady=(0, 8))
+        tk.Label(connection_fields, text="Port", bg=c["bg_secondary"], fg=c["text_secondary"]).pack(side=tk.LEFT)
+        self.client_port = self._entry(connection_fields, "8080", 8)
+        self.client_port.pack(side=tk.RIGHT)
+
+        tk.Label(client_frame, text="Pairing key from the host", bg=c["bg_secondary"],
+                 fg=c["text_secondary"], font=("Arial", 8)).pack(anchor=tk.W)
+        self.client_key = self._entry(client_frame, "", 24)
+        self.client_key.pack(fill=tk.X, pady=(3, 10))
+
+        client_actions = tk.Frame(client_frame, bg=c["bg_secondary"])
+        client_actions.pack(fill=tk.X)
+        self.connect_button = self._button(client_actions, "Connect", self.connect_client)
+        self.connect_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        self.disconnect_button = self._button(client_actions, "Disconnect", self.disconnect_client)
         self.disconnect_button.configure(state=tk.DISABLED)
-        self.disconnect_button.pack(side=tk.LEFT, padx=2)
+        self.disconnect_button.pack(side=tk.LEFT)
 
-        tk.Label(
-            client_frame, text="Paste the pairing key shown on the host laptop:",
-            bg=c["bg_secondary"], fg=c["text_secondary"], anchor=tk.W,
-        ).pack(fill=tk.X, pady=(7, 2))
-        self.client_key = self._entry(client_frame, "", 48)
-        self.client_key.pack(fill=tk.X)
+        self.status_label = tk.Label(self, text="Sharing stopped  ·  Not connected",
+                                     font=("Arial", 9, "bold"), anchor=tk.W,
+                                     bg=c["bg_main"], fg=c["text_secondary"], padx=12, pady=9)
+        self.status_label.pack(fill=tk.X, padx=12, pady=(0, 8))
 
-        self.status_label = tk.Label(
-            self, text="Sharing: stopped  |  Remote laptop: disconnected",
-            font=("Arial", 9), anchor=tk.W,
-            bg=c["bg_secondary"], fg=c["text_secondary"],
-        )
-        self.status_label.pack(fill=tk.X, padx=8, pady=(5, 3))
-
-        log_frame = tk.Frame(self, bg=c["bg_main"])
-        log_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=(3, 8))
-        self.log_box = tk.Text(
-            log_frame, height=5, wrap=tk.WORD, state=tk.DISABLED,
-            bg=c["bg_main"], fg=c["text_secondary"],
-            insertbackground=c["text_primary"], relief=tk.FLAT,
-            font=("Consolas", 9),
-        )
+        log_frame = tk.Frame(self, bg=c["bg_secondary"])
+        log_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
+        tk.Label(log_frame, text="ACTIVITY", font=("Arial", 8, "bold"),
+                 bg=c["bg_secondary"], fg=c["text_secondary"]).pack(anchor=tk.W, padx=9, pady=(7, 3))
+        self.log_box = tk.Text(log_frame, height=4, wrap=tk.WORD, state=tk.DISABLED,
+                               bg=c["bg_main"], fg=c["text_secondary"],
+                               insertbackground=c["text_primary"], relief=tk.FLAT,
+                               font=("Consolas", 8), padx=8, pady=6)
         scrollbar = tk.Scrollbar(log_frame, command=self.log_box.yview)
         self.log_box.configure(yscrollcommand=scrollbar.set)
-        self.log_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.log_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(8, 0), pady=(0, 8))
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, padx=(0, 8), pady=(0, 8))
 
     def _entry(self, parent, value, width):
         widget = tk.Entry(
