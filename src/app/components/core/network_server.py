@@ -115,6 +115,7 @@ class NetworkServer:
                 self._capture.warp_to_edge(enter_edge)
             elif device_id != "host":
                 self._capture.park_cursor()
+        self.on_devices(devices)
         for peer in peers:
             self._send_state(peer, devices, device_id, enter_edge)
         self.on_log(f"[Mixput] Control: {self._device_name(old)} → {self._device_name(device_id)}.")
