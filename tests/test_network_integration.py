@@ -153,6 +153,37 @@ class NetworkIntegrationTests(unittest.TestCase):
         self.assertTrue(self.host_backend.capture_enabled)
         self.assertFalse(self.receiver_backend.capture_enabled)
 
+    def test_local_mode_is_per_device_and_does_not_disconnect_session(self):
+        self._start_server()
+        self.assertTrue(self.client.connect("127.0.0.1", self.port))
+        self._wait(self.client_connected, "initial pairing")
+        self._wait(self.server_connected, "host authentication")
+
+        self.assertTrue(self.server.set_local_mode(True))
+        self.assertTrue(self.server.local_mode)
+        self.assertFalse(self.client.local_mode)
+        self.assertTrue(self.client.running)
+        self.assertTrue(self.server.running)
+
+        self.server._set_owner(self.client.pairings.device_id, "left")
+        deadline = time.monotonic() + 5
+        while self.client._control_owner != self.client.pairings.device_id and time.monotonic() < deadline:
+            time.sleep(0.01)
+
+        self.assertTrue(self.client.set_local_mode(True))
+        self.assertTrue(self.client.local_mode)
+        self.assertTrue(self.server.set_local_mode(False))
+        self.server._send_input({"type": "key_down", "key": "a"})
+        time.sleep(0.1)
+        self.assertEqual(self.receiver_backend.events, [])
+
+        self.assertTrue(self.client.set_local_mode(False))
+        self.server._send_input({"type": "key_down", "key": "b"})
+        self._wait(self.receiver_backend.event_received, "input after returning to shared mode")
+        self.assertEqual(self.receiver_backend.events, [{"type": "key_down", "key": "b"}])
+        self.assertTrue(self.client.running)
+        self.assertTrue(self.server.running)
+
     def test_revoked_device_must_request_approval_again(self):
         self._start_server()
         self.assertTrue(self.client.connect("127.0.0.1", self.port))

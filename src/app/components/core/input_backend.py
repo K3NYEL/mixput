@@ -12,6 +12,9 @@ class InputBackend:
     def __init__(self, on_event=None, on_edge=None):
         self.on_event = on_event or (lambda event: None)
         self.on_edge = on_edge or (lambda side: None)
+        self.on_toggle_local = lambda: None
+        self._hotkey_keys = set()
+        self._hotkey_latched = False
         self._keyboard_listener = None
         self._mouse_listener = None
         self._controller = None
@@ -75,14 +78,34 @@ class InputBackend:
                     return self._capture_enabled
 
             def key_event(kind, key):
-                if not is_enabled():
-                    return
                 try:
                     value = key.char if key.char is not None else key.name
                 except AttributeError:
                     value = str(key).replace("Key.", "")
+                value = str(value) if value else ""
+                identity = value.lower()
+                toggle = False
+                with self._lock:
+                    if kind == "key_down":
+                        self._hotkey_keys.add(identity)
+                        has_ctrl = any(item in self._hotkey_keys for item in ("ctrl", "ctrl_l", "ctrl_r"))
+                        has_alt = any(item in self._hotkey_keys for item in ("alt", "alt_l", "alt_r"))
+                        if identity == "m" and has_ctrl and has_alt and not self._hotkey_latched:
+                            self._hotkey_latched = True
+                            toggle = True
+                    elif kind == "key_up":
+                        self._hotkey_keys.discard(identity)
+                        if identity == "m":
+                            self._hotkey_latched = False
+                if toggle:
+                    self.on_toggle_local()
+                    return
+                with self._lock:
+                    chord_held = self._hotkey_latched
+                if chord_held or not is_enabled():
+                    return
                 if value:
-                    self.on_event({"type": kind, "key": str(value)})
+                    self.on_event({"type": kind, "key": value})
 
             def on_move(x, y):
                 position = (int(x), int(y))
