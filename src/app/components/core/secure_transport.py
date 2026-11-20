@@ -1,6 +1,5 @@
 """Authenticated encrypted TCP channel with per-direction sequence numbers."""
 import json
-import socket
 import threading
 
 from cryptography.fernet import Fernet, InvalidToken
