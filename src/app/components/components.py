@@ -16,6 +16,8 @@ from .core.updater import (
     check_for_update,
     download_and_stage,
     apply_update_and_restart,
+    get_update_log_path,
+    consume_update_diagnostics,
 )
 
 
@@ -49,6 +51,7 @@ class App(tk.Canvas):
         self.discovery.start()
         self.show_page("home")
         self.after(1500, self.check_for_updates)
+        self.after(1800, self._show_update_diagnostics)
 
     def _build_shell(self):
         c = self.CURRENT_THEME
@@ -453,6 +456,19 @@ class App(tk.Canvas):
             self.discovery.stop()
         super().destroy()
 
+    def _show_update_diagnostics(self):
+        details = consume_update_diagnostics()
+        if not details:
+            return
+        log_path = get_update_log_path()
+        messagebox.showwarning(
+            "Previous update did not complete",
+            "Mixput detected an error during the previous update attempt. "
+            "The current installed copy was opened.\n\n"
+            + details + "\n\nFull log: " + str(log_path),
+            parent=self.winfo_toplevel(),
+        )
+
     def check_for_updates(self, manual=True):
         if self._update_check_running or self._update_install_running:
             return
@@ -538,6 +554,10 @@ class App(tk.Canvas):
             self._update_progressbar.stop()
             self._update_progressbar.configure(mode="determinate", maximum=total, value=downloaded)
             self._update_percent.configure(text=f"{downloaded / total * 100:.0f}%")
+        elif phase == "download":
+            self._update_progressbar.configure(mode="indeterminate")
+            self._update_progressbar.start(12)
+            self._update_percent.configure(text="Downloading…")
         elif phase in ("verify", "extract", "install"):
             self._update_progressbar.configure(mode="indeterminate")
             self._update_progressbar.start(12)
