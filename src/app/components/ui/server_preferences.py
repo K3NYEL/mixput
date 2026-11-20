@@ -184,7 +184,7 @@ class ServerPreferences(tk.Frame):
         self.server.approve_pairing(request["request_id"], approved)
         if approved:
             self._queue_log(f'[Mixput] Authorized {request["name"]} ({request["ip"]}).')
-            self._refresh_authorized_devices()
+            self.after(500, self._refresh_authorized_devices)
         else:
             self._queue_log(f'[Mixput] Rejected pairing request from {request["name"]}.')
 
