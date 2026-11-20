@@ -7,7 +7,7 @@ from app.components.core.network_server import NetworkServer
 
 
 class ServerPreferences(tk.Frame):
-    """Embedded Server/Client controls for Mixput Preferences."""
+    """Controls for sharing keyboard and mouse between laptops."""
 
     def __init__(self, parent):
         self.colors = theme.CURRENT_THEME
@@ -31,14 +31,14 @@ class ServerPreferences(tk.Frame):
         )
 
         heading = tk.Label(
-            self, text="Network Server", font=("Arial", 12, "bold"),
+            self, text="Share your keyboard and mouse", font=("Arial", 12, "bold"),
             bg=c["bg_secondary"], fg=c["text_primary"],
         )
         heading.pack(anchor=tk.W, padx=8, pady=(6, 2))
 
         description = tk.Label(
             self,
-            text="Host a local TCP server or connect to another Mixput server.",
+            text="Start sharing from this laptop, or connect to another laptop on your local network.",
             font=("Arial", 9),
             bg=c["bg_secondary"], fg=c["text_secondary"],
         )
@@ -47,7 +47,7 @@ class ServerPreferences(tk.Frame):
         self.server_row = tk.Frame(self, bg=c["bg_secondary"])
         self.server_row.pack(fill=tk.X, padx=8, pady=2)
         tk.Label(
-            self.server_row, text="Server", width=8, anchor=tk.W,
+            self.server_row, text="This laptop", width=11, anchor=tk.W,
             bg=c["bg_secondary"], fg=c["text_primary"],
         ).pack(side=tk.LEFT)
         self.server_host = self._entry(self.server_row, "127.0.0.1", width=16)
@@ -63,7 +63,7 @@ class ServerPreferences(tk.Frame):
         self.client_row = tk.Frame(self, bg=c["bg_secondary"])
         self.client_row.pack(fill=tk.X, padx=8, pady=2)
         tk.Label(
-            self.client_row, text="Client", width=8, anchor=tk.W,
+            self.client_row, text="Other laptop", width=11, anchor=tk.W,
             bg=c["bg_secondary"], fg=c["text_primary"],
         ).pack(side=tk.LEFT)
         self.client_host = self._entry(self.client_row, "127.0.0.1", width=16)
@@ -79,7 +79,7 @@ class ServerPreferences(tk.Frame):
         self.disconnect_button.pack(side=tk.LEFT, padx=2)
 
         self.status_label = tk.Label(
-            self, text="Server: stopped  |  Client: disconnected",
+            self, text="Sharing: stopped  |  Connection: disconnected",
             font=("Arial", 9), anchor=tk.W,
             bg=c["bg_secondary"], fg=c["text_secondary"],
         )
@@ -223,10 +223,10 @@ class ServerPreferences(tk.Frame):
     def _refresh_status(self, server=None, client=None):
         current = self.status_label.cget("text")
         parts = current.split("  |  ")
-        server_status = server or parts[0].replace("Server: ", "")
-        client_status = client or parts[-1].replace("Client: ", "")
+        server_status = server or parts[0].replace("Sharing: ", "")
+        client_status = client or parts[-1].replace("Connection: ", "")
         self.status_label.configure(
-            text=f"Server: {server_status}  |  Client: {client_status}"
+            text=f"Sharing: {server_status}  |  Connection: {client_status}"
         )
 
     def apply_theme(self, colors):
