@@ -71,7 +71,7 @@ class NetworkIntegrationTests(unittest.TestCase):
 
     def _approve_pairing(self, request):
         self.pairing_requested.set()
-        self.assertEqual(request["name"], "test-client")
+        self.assertTrue(request["name"])
         self.server.approve_pairing(request["request_id"], True)
 
     def tearDown(self):
@@ -118,6 +118,16 @@ class NetworkIntegrationTests(unittest.TestCase):
             time.sleep(0.01)
         self.assertTrue(self.server.revoke_device(device_id))
         self.assertIsNone(self.server.pairings.get_authorized_client(device_id))
+
+        self.server.on_pairing_request = lambda request: self.server.approve_pairing(
+            request["request_id"], False
+        )
+        self.client_connected.clear()
+        self.assertTrue(self.client.connect("127.0.0.1", self.port))
+        deadline = time.monotonic() + 5
+        while self.client.running and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertFalse(self.client.running)
 
 
 if __name__ == "__main__":

@@ -140,10 +140,9 @@ class NetworkServer:
                 raise ProtocolError("Invalid device identity or pairing protocol.")
 
             if control.get("type") == "resume":
-                if control.get("host_id") != self.pairings.device_id:
-                    send_control(connection, {"type": "pair_required", "version": PAIRING_VERSION})
-                    control = receive_control(connection)
-                record = self.pairings.get_authorized_client(client_id)
+                record = None
+                if control.get("host_id") == self.pairings.device_id:
+                    record = self.pairings.get_authorized_client(client_id)
                 if record is None:
                     send_control(connection, {"type": "pair_required", "version": PAIRING_VERSION})
                     control = receive_control(connection)

@@ -16,11 +16,11 @@ from app.components.core.secure_transport import SecureChannel
 
 
 class NetworkClient:
-    def __init__(self, on_message=None, on_status=None, input_backend=None, pairing_store=None):
+    def __init__(self, on_message=None, on_status=None, input_backend=None):
         self.on_message = on_message or (lambda message: None)
         self.on_status = on_status or (lambda status: None)
         self.input_backend = input_backend
-        self.pairings = pairing_store or PairingStore()
+        self.pairings = PairingStore()
         self.running = False
         self.sock = None
         self._channel = None

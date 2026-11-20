@@ -187,7 +187,7 @@ class App(tk.Canvas):
         ).pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
         self._card(
             cards, "Other computer",
-            "Connect another laptop using its LAN address and pairing key.",
+            "Select another laptop and request access. New devices must be approved on the host.",
         ).pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
 
         tk.Button(
