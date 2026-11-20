@@ -179,6 +179,12 @@ class ServerPreferences(tk.Frame):
             return
         names = [str(item.get("name", "Device")) for item in sorted(devices, key=lambda d: d.get("index", 0))]
         self.devices_label.configure(text="Connected desktops: " + "  →  ".join(names))
+        assigned_ip = state.get("virtual_ip")
+        if assigned_ip:
+            self.virtual_ip = str(assigned_ip)
+            virtual_label = self.network_value_labels.get("Mixput virtual IP")
+            if virtual_label is not None:
+                virtual_label.configure(text=self.virtual_ip)
         self.on_state_changed({
             "devices": devices, "owner": state.get("owner", "host"),
             "server_status": self._server_status, "client_status": self._client_status,
