@@ -504,7 +504,7 @@ class App(tk.Canvas):
 
         def worker():
             try:
-                staged_dir = download_and_stage(info["url"])
+                staged_dir = download_and_stage(info["url"], info["name"])
                 self.after(0, lambda: self._apply_staged_update(staged_dir))
             except Exception as exc:
                 error = str(exc)
