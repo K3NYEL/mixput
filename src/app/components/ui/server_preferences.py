@@ -83,9 +83,9 @@ class ServerPreferences(tk.Frame):
         tk.Label(host_frame, text="Pairing key", bg=c["bg_secondary"],
                  fg=c["text_secondary"], font=("Arial", 8)).pack(anchor=tk.W)
         key_row = tk.Frame(host_frame, bg=c["bg_secondary"])
-        key_row.pack(fill=tk.X, pady=(3, 0))
-        self.host_key = self._entry(key_row, "", 24)
-        self.host_key.configure(state="readonly")
+        key_row.pack(fill=tk.X)
+        self.host_key = self._entry(key_row, "", 48)
+        self.host_key.configure(state=tk.READONLY)
         self.host_key.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         self.copy_key_button = self._button(key_row, "Copy", self.copy_pairing_key)
         self.copy_key_button.pack(side=tk.RIGHT)
