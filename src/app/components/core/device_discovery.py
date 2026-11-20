@@ -5,9 +5,10 @@ import json
 import socket
 import threading
 import time
-import uuid
 
 import psutil
+
+from app.components.core.pairing_store import PairingStore
 
 DISCOVERY_PORT = 45821
 DISCOVERY_INTERVAL = 2.0
@@ -49,7 +50,7 @@ class DeviceDiscovery:
 
     def __init__(self, on_devices=None, tcp_port=8080):
         self.on_devices = on_devices or (lambda devices: None)
-        self.device_id = uuid.uuid4().hex
+        self.device_id = PairingStore().device_id
         self.device_name = socket.gethostname()[:64]
         self.tcp_port = int(tcp_port)
         self.sharing = False

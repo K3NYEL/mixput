@@ -1,7 +1,7 @@
 """Versioned, length-limited JSON messages for Mixput input sharing."""
 import json
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 MAX_MESSAGE_BYTES = 4096
 EVENT_TYPES = {"key_down", "key_up", "mouse_move", "mouse_button", "mouse_scroll"}
 

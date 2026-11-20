@@ -1,5 +1,6 @@
 """Authenticated Mixput client with server-managed horizontal topology and group chat."""
 import base64
+import ipaddress
 import os
 import socket
 import threading
@@ -33,10 +34,17 @@ class NetworkClient:
         self._device_id = self.pairings.device_id
         self._index = 1
         self._devices = []
+        self._virtual_ip = None
+        self._virtual_network = None
         if self.input_backend is not None:
             self.input_backend.on_event = self._send_input
             self.input_backend.on_edge = self._on_local_edge
             self.input_backend.on_toggle_local = self.toggle_local_mode
+
+    @property
+    def virtual_ip(self):
+        with self._lock:
+            return self._virtual_ip
 
     @property
     def local_mode(self):
@@ -131,8 +139,21 @@ class NetworkClient:
 
     def _apply_session_state(self, message):
         devices, owner = message.get("devices"), message.get("owner")
-        if not isinstance(devices, list) or len(devices) > 4 or not isinstance(owner, str):
+        if not isinstance(devices, list) or not 2 <= len(devices) <= 4 or not isinstance(owner, str):
             raise ProtocolError("Invalid server topology.")
+        virtual_addresses = []
+        for device in devices:
+            if not isinstance(device, dict):
+                raise ProtocolError("Invalid device entry in server topology.")
+            try:
+                virtual_address = ipaddress.ip_address(device.get("virtual_ip", ""))
+            except ValueError as error:
+                raise ProtocolError("The server provided an invalid Mixput virtual IP.") from error
+            if virtual_address.version != 4 or virtual_address not in ipaddress.ip_network("10.77.0.0/16"):
+                raise ProtocolError("The server provided an out-of-range Mixput virtual IP.")
+            virtual_addresses.append(str(virtual_address))
+        if len(set(virtual_addresses)) != len(virtual_addresses):
+            raise ProtocolError("The server assigned duplicate Mixput virtual IP addresses.")
         own = next((d for d in devices if isinstance(d, dict) and d.get("id") == self._device_id), None)
         if own is None:
             raise ProtocolError("This device is missing from the server topology.")
@@ -140,6 +161,8 @@ class NetworkClient:
             old_owner = self._control_owner
             self._devices = devices
             self._index = int(own.get("index", 1))
+            self._virtual_ip = str(own["virtual_ip"])
+            self._virtual_network = "10.77.0.0/16"
             self._control_owner = owner
             active = owner == self._device_id
         if self.input_backend:
@@ -152,6 +175,8 @@ class NetworkClient:
         self.on_session({
             "devices": devices, "owner": owner, "index": self._index,
             "local_mode": self.local_mode,
+            "virtual_ip": self.virtual_ip,
+            "virtual_network": self._virtual_network,
         })
 
     def _run(self, host, port):
@@ -220,6 +245,8 @@ class NetworkClient:
             with self._lock:
                 self._control_owner = "host"
                 self._devices = []
+                self._virtual_ip = None
+                self._virtual_network = None
                 self._local_mode = False
             if self.input_backend:
                 self.input_backend.stop_capture()
