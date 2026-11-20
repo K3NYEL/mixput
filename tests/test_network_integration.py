@@ -201,6 +201,10 @@ class NetworkIntegrationTests(unittest.TestCase):
         while len(self.server.connected_devices) < 3 and time.monotonic() < deadline:
             time.sleep(0.01)
         self.assertEqual(len(self.server.connected_devices), 3)
+        deadline = time.monotonic() + 5
+        while len(self.client._devices) < 3 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual(len(self.client._devices), 3)
         self.assertTrue(third.connect("127.0.0.1", self.port))
         deadline = time.monotonic() + 5
         while len(self.server.connected_devices) < 4 and time.monotonic() < deadline:
