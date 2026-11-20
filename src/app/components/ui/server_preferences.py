@@ -28,18 +28,11 @@ class ServerPreferences(tk.Frame):
             on_status=self._queue_client_status,
             input_backend=self.remote_input,
         )
-        self._build()
+        self._server_status = "stopped"\n        self._client_status = "disconnected"\n        self._build()
 
     def _build(self):
         c = self.colors
         self.configure(bg=c["bg_secondary"], highlightbackground=c["border"], highlightthickness=1)
-
-        header = tk.Frame(self, bg=c["bg_secondary"])
-        header.pack(fill=tk.X, padx=16, pady=(14, 10))
-        tk.Label(header, text="Connect your computers", font=("Arial", 15, "bold"),
-                 bg=c["bg_secondary"], fg=c["text_primary"]).pack(anchor=tk.W)
-        tk.Label(header, text="Use one keyboard and mouse across two laptops on the same local network.",
-                 font=("Arial", 9), bg=c["bg_secondary"], fg=c["text_secondary"]).pack(anchor=tk.W, pady=(3, 0))
 
         available, reason = InputBackend.availability()
         self.backend_status = tk.Label(
@@ -59,8 +52,6 @@ class ServerPreferences(tk.Frame):
         host_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
         interface, local_ip = get_active_network_info()
         self.local_ip = local_ip
-        tk.Label(host_frame, text="Your local address", bg=c["bg_secondary"],
-                 fg=c["text_secondary"], font=("Arial", 8)).pack(anchor=tk.W)
         self.local_ip_label = tk.Label(host_frame, text=f"{local_ip}  ·  {interface}",
                                         bg=c["bg_secondary"], fg=c["text_primary"],
                                         font=("Arial", 10, "bold"), anchor=tk.W)
@@ -118,15 +109,13 @@ class ServerPreferences(tk.Frame):
         self.disconnect_button.configure(state=tk.DISABLED)
         self.disconnect_button.pack(side=tk.LEFT)
 
-        self.status_label = tk.Label(self, text="Sharing stopped  ·  Not connected",
+        self.status_label = tk.Label(self, text="Stopped  ·  Disconnected",
                                      font=("Arial", 9, "bold"), anchor=tk.W,
                                      bg=c["bg_main"], fg=c["text_secondary"], padx=12, pady=9)
         self.status_label.pack(fill=tk.X, padx=12, pady=(0, 8))
 
         log_frame = tk.Frame(self, bg=c["bg_secondary"])
         log_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
-        tk.Label(log_frame, text="ACTIVITY", font=("Arial", 8, "bold"),
-                 bg=c["bg_secondary"], fg=c["text_secondary"]).pack(anchor=tk.W, padx=9, pady=(7, 3))
         self.log_box = tk.Text(log_frame, height=4, wrap=tk.WORD, state=tk.DISABLED,
                                bg=c["bg_main"], fg=c["text_secondary"],
                                insertbackground=c["text_primary"], relief=tk.FLAT,
@@ -198,7 +187,7 @@ class ServerPreferences(tk.Frame):
             return
         interface, local_ip = get_active_network_info()
         self.local_ip = local_ip
-        self.local_ip_label.configure(text=f"LAN address: {local_ip}   •   Interface: {interface}")
+        self.local_ip_label.configure(text=f"{local_ip}  ·  {interface}")
         if local_ip == "0.0.0.0":
             messagebox.showerror("Network unavailable", "Connect this laptop to a local network first.", parent=self)
             return
@@ -262,10 +251,41 @@ class ServerPreferences(tk.Frame):
             pass
 
     def _apply_server_status(self, status):
+        self._server_status = status
         active = status in ("listening", "authenticating", "connected")
         self.start_button.configure(state=tk.DISABLED if active else tk.NORMAL)
         self.stop_button.configure(state=tk.NORMAL if active else tk.DISABLED)
-        self._refresh_status(server=status)
+        self._refresh_status()
+
+    def _apply_client_status(self, status):
+        self._client_status = status
+        connected = status in ("connecting", "connected")
+        self.connect_button.configure(state=tk.DISABLED if connected else tk.NORMAL)
+        self.disconnect_button.configure(state=tk.NORMAL if connected else tk.DISABLED)
+        self._refresh_status()
+
+    def _refresh_status(self):
+        server_labels = {
+            "stopped": "Stopped",
+            "listening": "Sharing",
+            "authenticating": "Pairing",
+            "connected": "Sharing active",
+            "error": "Sharing error",
+        }
+        client_labels = {
+            "disconnected": "Disconnected",
+            "connecting": "Connecting",
+            "connected": "Connected",
+        }
+        server = server_labels.get(self._server_status, self._server_status.title())
+        client = client_labels.get(self._client_status, self._client_status.title())
+        self.status_label.configure(text=f"{server}  ·  {client}")
+
+    def _queue_client_status(self, status):
+        try:
+            self.after(0, self._apply_client_status, status)
+        except tk.TclError:
+            pass
 
     def _queue_client_status(self, status):
         try:
@@ -274,18 +294,28 @@ class ServerPreferences(tk.Frame):
             pass
 
     def _apply_client_status(self, status):
-        connected = status == "connected"
+        self._client_status = status
+        connected = status in ("connecting", "connected")
         self.connect_button.configure(state=tk.DISABLED if connected else tk.NORMAL)
         self.disconnect_button.configure(state=tk.NORMAL if connected else tk.DISABLED)
-        self._refresh_status(client=status)
+        self._refresh_status()
 
-    def _refresh_status(self, server=None, client=None):
-        parts = self.status_label.cget("text").split("  |  ")
-        server_status = server or parts[0].replace("Sharing: ", "")
-        client_status = client or parts[-1].replace("Remote laptop: ", "")
-        self.status_label.configure(
-            text=f"Sharing: {server_status}  |  Remote laptop: {client_status}"
-        )
+    def _refresh_status(self):
+        server_labels = {
+            "stopped": "Stopped",
+            "listening": "Sharing",
+            "authenticating": "Pairing",
+            "connected": "Sharing active",
+            "error": "Sharing error",
+        }
+        client_labels = {
+            "disconnected": "Disconnected",
+            "connecting": "Connecting",
+            "connected": "Connected",
+        }
+        server = server_labels.get(self._server_status, self._server_status.title())
+        client = client_labels.get(self._client_status, self._client_status.title())
+        self.status_label.configure(text=f"{server}  ·  {client}")
 
     def apply_theme(self, colors):
         self.colors = colors
