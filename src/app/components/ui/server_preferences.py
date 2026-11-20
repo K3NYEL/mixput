@@ -286,9 +286,8 @@ class ServerPreferences(tk.Frame):
         except ValueError as error:
             messagebox.showerror("Invalid port", str(error), parent=self)
             return
-        interface, local_ip = get_active_network_info()
-        self.local_ip = local_ip
-        self.local_ip_label.configure(text=f"{local_ip}  ·  {interface}")
+        self.refresh_network_info()
+        local_ip = self.local_ip
         if local_ip == "0.0.0.0":
             messagebox.showerror("Network unavailable", "Connect this laptop to a local network first.", parent=self)
             return
