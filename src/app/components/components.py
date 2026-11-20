@@ -281,11 +281,12 @@ class App(tk.Canvas):
             pass
 
     def _apply_discovered_devices(self, devices):
-        self.discovered_devices = devices
+        previous_devices = self.discovered_devices
         selected = self.devices_list.curselection()
         selected_id = None
-        if selected and selected[0] < len(self.discovered_devices):
-            selected_id = self.discovered_devices[selected[0]]["id"]
+        if selected and selected[0] < len(previous_devices):
+            selected_id = previous_devices[selected[0]]["id"]
+        self.discovered_devices = devices
         self.devices_list.delete(0, tk.END)
         self.use_device_button.configure(state=tk.DISABLED)
         for device in devices:
