@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import messagebox
 import sys
 from pathlib import Path
 from PIL import Image, ImageTk
@@ -15,6 +16,11 @@ class MainWindows(tk.Tk):
         self.DARK_THEME = False
         self.CURRENT_THEME = self.theme.LIGHT_THEME
         self._set_window_icon()
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def on_close(self):
+        if messagebox.askokcancel("Quit", "Do you want to quit?"):
+            self.destroy()
 
     def resource_path(self, relative_path: str) -> Path:
         base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))

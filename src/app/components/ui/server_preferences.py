@@ -10,7 +10,7 @@ from app.components.core.network_server import NetworkServer
 
 
 class ServerPreferences(tk.Frame):
-    """Visible controls for sharing input and approving trusted LAN devices."""
+    """Dedicated Mixput host server controls and configuration."""
 
     def __init__(self, parent):
         self.colors = theme.CURRENT_THEME
@@ -40,6 +40,10 @@ class ServerPreferences(tk.Frame):
         self._server_status = "stopped"
         self._client_status = "disconnected"
         self._active_port = 8080
+        self.chat_messages = []
+        self.on_chat_message = lambda message: None
+        self.on_state_changed = lambda state: None
+        self.on_activity = lambda message: None
         self.on_sharing_changed = lambda sharing, port: None
         self._build()
 
@@ -56,13 +60,12 @@ class ServerPreferences(tk.Frame):
         cards = tk.Frame(self, bg=c["bg_secondary"])
         cards.pack(fill=tk.X, padx=12, pady=(0, 8))
         cards.columnconfigure(0, weight=1)
-        cards.columnconfigure(1, weight=1)
 
         host_frame = tk.LabelFrame(
             cards, text=" SHARE THIS COMPUTER ", bg=c["bg_secondary"],
             fg=c["text_primary"], padx=12, pady=10, font=("Arial", 9, "bold")
         )
-        host_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        host_frame.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=0)
         interface, local_ip = get_active_network_info()
         self.local_ip = local_ip
         self.local_ip_label = tk.Label(
@@ -80,9 +83,9 @@ class ServerPreferences(tk.Frame):
 
         host_actions = tk.Frame(host_frame, bg=c["bg_secondary"])
         host_actions.pack(fill=tk.X, pady=(0, 10))
-        self.start_button = self._button(host_actions, "Start sharing", self.start_server)
+        self.start_button = self._button(host_actions, "Start server", self.start_server)
         self.start_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-        self.stop_button = self._button(host_actions, "Stop", self.stop_server)
+        self.stop_button = self._button(host_actions, "Stop server", self.stop_server)
         self.stop_button.configure(state=tk.DISABLED)
         self.stop_button.pack(side=tk.LEFT)
 
@@ -100,67 +103,23 @@ class ServerPreferences(tk.Frame):
         self.revoke_button.pack(anchor=tk.W)
         self._refresh_authorized_devices()
 
-        client_frame = tk.LabelFrame(
-            cards, text=" CONNECT TO A COMPUTER ", bg=c["bg_secondary"],
-            fg=c["text_primary"], padx=12, pady=10, font=("Arial", 9, "bold")
-        )
-        client_frame.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
         tk.Label(
-            client_frame, text="Host local IP address", bg=c["bg_secondary"],
-            fg=c["text_secondary"], font=("Arial", 8)
-        ).pack(anchor=tk.W)
-        self.client_host = self._entry(client_frame, "", 24)
-        self.client_host.pack(fill=tk.X, pady=(3, 9))
-
-        connection_fields = tk.Frame(client_frame, bg=c["bg_secondary"])
-        connection_fields.pack(fill=tk.X, pady=(0, 8))
-        tk.Label(connection_fields, text="Port", bg=c["bg_secondary"], fg=c["text_secondary"]).pack(side=tk.LEFT)
-        self.client_port = self._entry(connection_fields, "8080", 8)
-        self.client_port.pack(side=tk.RIGHT)
-
-        tk.Label(
-            client_frame, text="Devices form a horizontal row. Move to the left or right edge to switch to the neighboring computer. Maximum: 4 devices including the server.",
-            bg=c["bg_secondary"], fg=c["text_secondary"],
-            font=("Arial", 8), wraplength=260, justify=tk.LEFT,
-        ).pack(anchor=tk.W, pady=(0, 10))
-        client_actions = tk.Frame(client_frame, bg=c["bg_secondary"])
-        client_actions.pack(fill=tk.X)
-        self.connect_button = self._button(client_actions, "Request access", self.connect_client)
-        self.connect_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-        self.disconnect_button = self._button(client_actions, "Disconnect", self.disconnect_client)
-        self.disconnect_button.configure(state=tk.DISABLED)
-        self.disconnect_button.pack(side=tk.LEFT)
+            self, text="This laptop will act as the Mixput host. Other laptops can discover this server on the same local network and request access.",
+            bg=c["bg_secondary"], fg=c["text_secondary"], font=("Arial", 9),
+            justify=tk.LEFT, wraplength=720,
+        ).pack(fill=tk.X, padx=16, pady=(0, 10))
 
         self.status_label = tk.Label(
-            self, text="Stopped  ·  Disconnected", font=("Arial", 9, "bold"),
+            self, text="Server stopped", font=("Arial", 9, "bold"),
             anchor=tk.W, bg=c["bg_main"], fg=c["text_secondary"], padx=12, pady=9
         )
         self.status_label.pack(fill=tk.X, padx=12, pady=(0, 8))
         self.devices_label = tk.Label(
-            self, text="Session row: this computer → waiting for devices",
+            self, text="Connected desktops: this computer · waiting for devices",
             bg=c["bg_secondary"], fg=c["text_secondary"], font=("Arial", 8),
             anchor=tk.W,
         )
         self.devices_label.pack(fill=tk.X, padx=14, pady=(0, 6))
-
-        chat_frame = tk.LabelFrame(
-            self, text=" GROUP CHAT ", bg=c["bg_secondary"],
-            fg=c["text_primary"], padx=8, pady=6, font=("Arial", 9, "bold")
-        )
-        chat_frame.pack(fill=tk.X, padx=12, pady=(0, 8))
-        self.chat_box = tk.Text(
-            chat_frame, height=5, wrap=tk.WORD, state=tk.DISABLED,
-            bg=c["bg_main"], fg=c["text_primary"], relief=tk.FLAT,
-            font=("Arial", 9), padx=7, pady=5,
-        )
-        self.chat_box.pack(fill=tk.X, pady=(0, 5))
-        chat_entry_row = tk.Frame(chat_frame, bg=c["bg_secondary"])
-        chat_entry_row.pack(fill=tk.X)
-        self.chat_entry = self._entry(chat_entry_row, "", 36)
-        self.chat_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-        self.chat_entry.bind("<Return>", lambda _event: self.send_chat())
-        self.chat_send_button = self._button(chat_entry_row, "Send", self.send_chat)
-        self.chat_send_button.pack(side=tk.RIGHT)
 
         log_frame = tk.Frame(self, bg=c["bg_secondary"])
         log_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
@@ -178,23 +137,16 @@ class ServerPreferences(tk.Frame):
 
     def _queue_chat(self, message):
         try:
-            self.after(0, self._append_chat, message)
+            self.after(0, self._dispatch_chat, message)
         except tk.TclError:
             pass
 
-    def _append_chat(self, message):
-        try:
-            sender = str(message.get("sender", "Device"))[:64]
-            text = str(message.get("text", ""))[:1000]
-            self.chat_box.configure(state=tk.NORMAL)
-            self.chat_box.insert(tk.END, f"{sender}: {text}" + chr(10))
-            self.chat_box.see(tk.END)
-            self.chat_box.configure(state=tk.DISABLED)
-        except (tk.TclError, AttributeError):
-            pass
+    def _dispatch_chat(self, message):
+        self.chat_messages.append(message)
+        self.on_chat_message(message)
 
     def _queue_server_devices(self, devices):
-        self._queue_session({"devices": devices, "owner": "host"})
+        self._queue_session({"devices": devices, "owner": self.server._control_owner})
 
     def _queue_session(self, state):
         try:
@@ -205,20 +157,22 @@ class ServerPreferences(tk.Frame):
     def _apply_session(self, state):
         devices = state.get("devices", [])
         if not devices:
-            self.devices_label.configure(text="Session row: this computer → waiting for devices")
+            self.devices_label.configure(text="Connected desktops: this computer · waiting for devices")
             return
         names = [str(item.get("name", "Device")) for item in sorted(devices, key=lambda d: d.get("index", 0))]
-        self.devices_label.configure(text="Session row: " + "  →  ".join(names))
+        self.devices_label.configure(text="Connected desktops: " + "  →  ".join(names))
+        self.on_state_changed({
+            "devices": devices, "owner": state.get("owner", "host"),
+            "server_status": self._server_status, "client_status": self._client_status,
+            "port": self._active_port, "local_ip": self.local_ip,
+        })
 
-    def send_chat(self):
-        text = self.chat_entry.get().strip()
-        if not text:
-            return
-        sent = self.server.send_chat(text) if self._server_status in ("listening", "connected", "pairing", "authenticating") else self.client.send_chat(text)
-        if sent:
-            self.chat_entry.delete(0, tk.END)
-        else:
-            self._queue_log("[Mixput] Chat is unavailable or the message exceeds 1000 characters.")
+    def send_chat_message(self, text):
+        if self._server_status in ("listening", "connected", "pairing", "authenticating"):
+            return self.server.send_chat(text)
+        if self._client_status == "connected":
+            return self.client.send_chat(text)
+        return False
 
     def _entry(self, parent, value, width):
         widget = tk.Entry(
@@ -258,7 +212,7 @@ class ServerPreferences(tk.Frame):
     def _ask_pairing_request(self, request):
         approved = messagebox.askyesno(
             "Mixput device pairing",
-            f'{request["name"]} ({request["ip"]}) wants permission to control this computer.\\n\\nAllow this device?',
+            f'{request["name"]} ({request["ip"]}) wants to join this Mixput session and receive shared keyboard and mouse input.\\n\\nAllow this device?',
             parent=self.winfo_toplevel(),
         )
         self.server.approve_pairing(request["request_id"], approved)
@@ -319,6 +273,10 @@ class ServerPreferences(tk.Frame):
         self.start_button.configure(state=tk.NORMAL)
         self.stop_button.configure(state=tk.DISABLED)
 
+    def connect_discovered_device(self, address, port):
+        self.set_discovered_device(address, port)
+        return self.connect_client()
+
     def set_discovered_device(self, address, port):
         self.client_host.delete(0, tk.END)
         self.client_host.insert(0, address)
@@ -359,6 +317,7 @@ class ServerPreferences(tk.Frame):
             self.log_box.insert(tk.END, message + "\n")
             self.log_box.see(tk.END)
             self.log_box.configure(state=tk.DISABLED)
+            self.on_activity(str(message))
         except tk.TclError:
             pass
 
@@ -403,8 +362,15 @@ class ServerPreferences(tk.Frame):
             "connected": "Connected",
         }
         server = server_labels.get(self._server_status, self._server_status.title())
-        client = client_labels.get(self._client_status, self._client_status.title())
-        self.status_label.configure(text=f"{server}  ·  {client}")
+        self.status_label.configure(text=f"Mixput server: {server}")
+        devices = self.server.connected_devices if self.server.running else (
+            self.client._devices if self._client_status == "connected" else [])
+        owner = self.server._control_owner if self.server.running else self.client._control_owner
+        self.on_state_changed({
+            "devices": devices, "owner": owner,
+            "server_status": self._server_status, "client_status": self._client_status,
+            "port": self._active_port, "local_ip": self.local_ip,
+        })
 
     def apply_theme(self, colors):
         self.colors = colors

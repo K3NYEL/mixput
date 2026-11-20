@@ -110,9 +110,12 @@ class NetworkServer:
             devices = self._device_snapshot_locked()
         if self._capture:
             self._capture.release_all()
-            self._capture.set_capture_enabled(device_id == "host")
+            self._capture.set_relative_mode(device_id != "host")
             if device_id == "host" and enter_edge:
                 self._capture.warp_to_edge(enter_edge)
+            elif device_id != "host":
+                self._capture.park_cursor()
+        self.on_devices(devices)
         for peer in peers:
             self._send_state(peer, devices, device_id, enter_edge)
         self.on_log(f"[Mixput] Control: {self._device_name(old)} → {self._device_name(device_id)}.")
@@ -140,10 +143,9 @@ class NetworkServer:
         if not isinstance(event, dict) or event.get("type") not in EVENT_TYPES:
             return
         with self._lock:
-            if self._control_owner != "host":
-                return
-            peer = next(iter(sorted(self._peers.values(), key=lambda item: item["index"])), None)
-        if peer is None:
+            target_id = self._control_owner
+            peer = self._peers.get(target_id)
+        if target_id == "host" or peer is None:
             return
         try:
             peer["channel"].send({"version": PROTOCOL_VERSION, "kind": "input", "event": event})
@@ -325,9 +327,8 @@ class NetworkServer:
                     with self._lock:
                         owner = self._control_owner
                     event = message.get("event")
-                    if owner == client_id and isinstance(event, dict) and event.get("type") in EVENT_TYPES and self._capture:
-                        if not self._capture.apply_event(event):
-                            self.on_log("[Mixput] Remote input event rejected.")
+                    if isinstance(event, dict):
+                        self.on_log("[Mixput] Ignored input from a receiver device.")
                 elif kind == "control_switch":
                     side = message.get("side")
                     with self._lock:
@@ -376,8 +377,10 @@ class NetworkServer:
                 if self._capture:
                     self._capture.release_all()
                     if self._peers:
-                        self._capture.set_capture_enabled(self._control_owner == "host")
+                        self._capture.set_capture_enabled(True)
+                        self._capture.set_relative_mode(self._control_owner != "host")
                     else:
+                        self._capture.set_relative_mode(False)
                         self._capture.stop_capture()
                 self._notify_devices()
                 self.on_log("[Mixput] A device disconnected.")
@@ -398,6 +401,7 @@ class NetworkServer:
         for peer in peers:
             peer["channel"].close()
         if self._capture:
+            self._capture.set_relative_mode(False)
             self._capture.stop_capture()
             self._capture.release_all()
         self.on_devices([{"id": "host", "name": self._host_name, "index": 0, "host": True}])

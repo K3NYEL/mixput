@@ -27,6 +27,7 @@ class App(tk.Canvas):
     NAV_ITEMS = (
         ("home", "Home"),
         ("connection", "Connection"),
+        ("chat", "Chat"),
         ("devices", "Devices"),
         ("settings", "Settings"),
     )
@@ -173,40 +174,66 @@ class App(tk.Canvas):
     def _build_pages(self):
         c = self.CURRENT_THEME
         home = self._page("home")
-        self._heading(
-            home, "Welcome to Mixput",
-            "Use one keyboard and mouse across two computers on your local network.",
-        )
-        self._card(
-            home, "Connection status",
-            "No remote computer is connected yet. Open Connection to start sharing or join another laptop.",
-        ).pack(fill=tk.X, pady=(0, 10))
-
-        cards = tk.Frame(home, bg=c["bg_main"])
-        cards.pack(fill=tk.X)
-        self._card(
-            cards, "This computer",
-            f"{socket.gethostname()}\\nThis is the computer that can share its input.",
-        ).pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
-        self._card(
-            cards, "Other computer",
-            "Select another laptop and request access. New devices must be approved on the host.",
-        ).pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
-
-        tk.Button(
-            home, text="Open connection setup",
-            command=lambda: self.show_page("connection"),
-            relief=tk.FLAT, cursor="hand2", padx=16, pady=10,
-            bg=c["border"], fg=c["text_primary"],
-            activebackground=c["border"], activeforeground=c["text_primary"],
-        ).pack(anchor=tk.W, pady=16)
+        self._heading(home, "Home", "Live overview of your Mixput sharing session.")
+        self.home_status_card = self._card(home, "Session status", "Server stopped · No remote devices connected")
+        self.home_status_card.pack(fill=tk.X, pady=(0, 10))
+        self.home_status_value = self.home_status_card.winfo_children()[1]
+        overview = tk.Frame(home, bg=c["bg_main"])
+        overview.pack(fill=tk.X)
+        self.home_target_card = self._card(overview, "Active desktop", "This computer")
+        self.home_target_card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
+        self.home_target_value = self.home_target_card.winfo_children()[1]
+        self.home_count_card = self._card(overview, "Connected devices", "1 / 4 devices")
+        self.home_count_card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
+        self.home_count_value = self.home_count_card.winfo_children()[1]
+        self.home_devices_card = self._card(home, "Horizontal desktop row", "This computer → waiting for connected laptops")
+        self.home_devices_card.pack(fill=tk.X, pady=(10, 10))
+        self.home_devices_value = self.home_devices_card.winfo_children()[1]
+        activity = tk.Frame(home, bg=c["bg_secondary"], highlightbackground=c["border"], highlightthickness=1)
+        activity.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        tk.Label(activity, text="Recent activity", font=("Arial", 11, "bold"),
+                 bg=c["bg_secondary"], fg=c["text_primary"]).pack(anchor=tk.W, padx=14, pady=(12, 5))
+        self.home_activity = tk.Text(activity, height=5, state=tk.DISABLED, wrap=tk.WORD,
+                                     relief=tk.FLAT, bg=c["bg_main"], fg=c["text_secondary"],
+                                     font=("Consolas", 8), padx=9, pady=7)
+        self.home_activity.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+        tk.Button(home, text="Configure connection", command=lambda: self.show_page("connection"),
+                  relief=tk.FLAT, cursor="hand2", padx=16, pady=10, bg=c["border"],
+                  fg=c["text_primary"], activebackground=c["border"],
+                  activeforeground=c["text_primary"]).pack(anchor=tk.W)
 
         connection = self._page("connection")
-        self._heading(
-            connection, "Connection",
-            "Choose which laptop shares its keyboard and mouse, or connect as the receiver.",
-        )
+        self._heading(connection, "Connection", "Configure and manage the Mixput server hosted by this laptop.")
         self.connection_panel = create_mixput_frame(connection)
+        self.connection_panel.server_preferences.on_state_changed = self._queue_dashboard_state
+        self.connection_panel.server_preferences.on_activity = self._queue_dashboard_activity
+        panel = self.connection_panel.server_preferences
+        self._queue_dashboard_state({"devices": panel.server.connected_devices, "owner": "host",
+                                     "server_status": "stopped", "client_status": "disconnected",
+                                     "port": 8080, "local_ip": panel.local_ip})
+
+        chat = self._page("chat")
+        self._heading(chat, "Group chat", "Messages shared with every device in this Mixput session.")
+        chat_frame = tk.Frame(chat, bg=c["bg_secondary"], highlightbackground=c["border"], highlightthickness=1)
+        chat_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+        self.chat_history = tk.Text(chat_frame, state=tk.DISABLED, wrap=tk.WORD, relief=tk.FLAT,
+                                    bg=c["bg_main"], fg=c["text_primary"], font=("Arial", 10),
+                                    padx=12, pady=10)
+        self.chat_history.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        composer = tk.Frame(chat, bg=c["bg_main"])
+        composer.pack(fill=tk.X)
+        self.chat_entry = tk.Entry(composer, relief=tk.FLAT, bg=c["bg_secondary"],
+                                   fg=c["text_primary"], insertbackground=c["text_primary"], font=("Arial", 10))
+        self.chat_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=9, padx=(0, 8))
+        self.chat_entry.bind("<Return>", lambda _event: self._send_chat_message())
+        self.chat_send_button = tk.Button(composer, text="Send", command=self._send_chat_message,
+                                          relief=tk.FLAT, cursor="hand2", padx=18, pady=8,
+                                          bg=c["border"], fg=c["text_primary"],
+                                          activebackground=c["border"], activeforeground=c["text_primary"])
+        self.chat_send_button.pack(side=tk.RIGHT)
+        panel.on_chat_message = self._queue_chat_message
+        for message in panel.chat_messages:
+            self._append_chat_message(message)
 
         devices = self._page("devices")
         self._heading(
@@ -262,7 +289,7 @@ class App(tk.Canvas):
         actions = tk.Frame(nearby, bg=c["bg_main"])
         actions.pack(fill=tk.X, pady=(8, 0))
         self.use_device_button = tk.Button(
-            actions, text="Use selected device",
+            actions, text="Connect to selected server",
             command=self._use_selected_device, state=tk.DISABLED,
             relief=tk.FLAT, cursor="hand2", padx=14, pady=8,
             bg=c["border"], fg=c["text_primary"],
@@ -301,6 +328,69 @@ class App(tk.Canvas):
             activebackground=c["border"], activeforeground=c["text_primary"],
         ).pack(anchor=tk.W)
 
+
+    def _queue_dashboard_state(self, state):
+        try:
+            self.after(0, self._apply_dashboard_state, state)
+        except tk.TclError:
+            pass
+
+    def _apply_dashboard_state(self, state):
+        devices = state.get("devices") or [{"id": "host", "name": socket.gethostname(), "index": 0}]
+        owner = state.get("owner", "host")
+        active = next((item.get("name", "Unknown device") for item in devices if item.get("id") == owner), "Unknown device")
+        server, client = state.get("server_status", "stopped"), state.get("client_status", "disconnected")
+        status = ("Server active" if server in ("listening", "connected", "pairing", "authenticating")
+                  else "Connected to host" if client == "connected"
+                  else "Server error" if server == "error" else "Server stopped")
+        self.home_status_value.configure(text=f"{status} · {len(devices)} device(s) in session")
+        self.home_target_value.configure(text=active)
+        self.home_count_value.configure(text=f"{len(devices)} / 4 devices")
+        row = "  →  ".join(item.get("name", "Device") for item in sorted(devices, key=lambda item: item.get("index", 0)))
+        self.home_devices_value.configure(text=row)
+
+    def _queue_dashboard_activity(self, message):
+        try:
+            self.after(0, self._append_dashboard_activity, message)
+        except tk.TclError:
+            pass
+
+    def _append_dashboard_activity(self, message):
+        try:
+            self.home_activity.configure(state=tk.NORMAL)
+            self.home_activity.insert(tk.END, str(message) + "\n")
+            lines = int(self.home_activity.index("end-1c").split(".")[0])
+            if lines > 80:
+                self.home_activity.delete("1.0", f"{lines - 80}.0")
+            self.home_activity.see(tk.END)
+            self.home_activity.configure(state=tk.DISABLED)
+        except tk.TclError:
+            pass
+
+    def _queue_chat_message(self, message):
+        try:
+            self.after(0, self._append_chat_message, message)
+        except tk.TclError:
+            pass
+
+    def _append_chat_message(self, message):
+        try:
+            sender, text = str(message.get("sender", "Device"))[:64], str(message.get("text", ""))[:1000]
+            self.chat_history.configure(state=tk.NORMAL)
+            self.chat_history.insert(tk.END, f"{sender}: {text}\n")
+            self.chat_history.see(tk.END)
+            self.chat_history.configure(state=tk.DISABLED)
+        except (tk.TclError, AttributeError):
+            pass
+
+    def _send_chat_message(self):
+        text = self.chat_entry.get().strip()
+        if not text:
+            return
+        if self.connection_panel.server_preferences.send_chat_message(text):
+            self.chat_entry.delete(0, tk.END)
+        else:
+            messagebox.showinfo("Mixput chat", "Connect to a Mixput session before sending messages.", parent=self)
 
     def _queue_discovered_devices(self, devices):
         try:
@@ -356,8 +446,7 @@ class App(tk.Canvas):
         if not device["sharing"]:
             return
         panel = self.connection_panel.server_preferences
-        panel.set_discovered_device(device["ip"], device["port"])
-        self.show_page("connection")
+        panel.connect_discovered_device(device["ip"], device["port"])
 
     def _set_discovery_sharing(self, sharing, port):
         self.discovery.set_endpoint(tcp_port=port, sharing=sharing)
