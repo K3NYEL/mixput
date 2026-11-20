@@ -2,7 +2,6 @@ import socket
 import threading
 import tkinter as tk
 from tkinter import messagebox
-from tkinter_icons import LucideIcon
 
 from app.components import theme
 from .ui.mixput_frame import create_mixput_frame
@@ -41,13 +40,11 @@ class App(tk.Canvas):
         self._build_shell()
         self._build_pages()
         self.show_page("home")
-
         self.after(1500, self.check_for_updates)
 
     def _build_shell(self):
         c = self.CURRENT_THEME
         self.configure(bg=c["bg_main"], highlightthickness=0)
-
         self.shell = tk.Frame(self, bg=c["bg_main"])
         self.shell.pack(fill=tk.BOTH, expand=True)
 
@@ -88,7 +85,6 @@ class App(tk.Canvas):
 
         self.body = tk.Frame(self.shell, bg=c["bg_main"])
         self.body.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
-
         self.sidebar = tk.Frame(
             self.body, width=178, bg=c["bg_secondary"],
             highlightbackground=c["border"], highlightthickness=1,
@@ -134,7 +130,7 @@ class App(tk.Canvas):
             wraplength=760, justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(0, 16))
 
-    def _card(self, parent, title, detail, accent=None):
+    def _card(self, parent, title, detail):
         c = self.CURRENT_THEME
         card = tk.Frame(
             parent, bg=c["bg_secondary"],
@@ -142,7 +138,7 @@ class App(tk.Canvas):
         )
         tk.Label(
             card, text=title, font=("Arial", 11, "bold"),
-            bg=c["bg_secondary"], fg=accent or c["text_primary"],
+            bg=c["bg_secondary"], fg=c["text_primary"],
         ).pack(anchor=tk.W, padx=14, pady=(13, 4))
         tk.Label(
             card, text=detail, font=("Arial", 9),
@@ -153,16 +149,16 @@ class App(tk.Canvas):
 
     def _build_pages(self):
         c = self.CURRENT_THEME
-
         home = self._page("home")
         self._heading(
             home, "Welcome to Mixput",
             "Use one keyboard and mouse across two computers on your local network.",
         )
-        status = self._card(
-            home, "Connection status", "No remote computer is connected yet.",
-        )
-        status.pack(fill=tk.X, pady=(0, 10))
+        self._card(
+            home, "Connection status",
+            "No remote computer is connected yet. Open Connection to start sharing or join another laptop.",
+        ).pack(fill=tk.X, pady=(0, 10))
+
         cards = tk.Frame(home, bg=c["bg_main"])
         cards.pack(fill=tk.X)
         self._card(
@@ -174,14 +170,13 @@ class App(tk.Canvas):
             "Connect another laptop using its LAN address and pairing key.",
         ).pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(5, 0))
 
-        action = tk.Button(
+        tk.Button(
             home, text="Open connection setup",
             command=lambda: self.show_page("connection"),
             relief=tk.FLAT, cursor="hand2", padx=16, pady=10,
             bg=c["border"], fg=c["text_primary"],
             activebackground=c["border"], activeforeground=c["text_primary"],
-        )
-        action.pack(anchor=tk.W, pady=16)
+        ).pack(anchor=tk.W, pady=16)
 
         connection = self._page("connection")
         self._heading(
@@ -253,9 +248,9 @@ class App(tk.Canvas):
         self._pages[page_id].pack(fill=tk.BOTH, expand=True)
         self.current_page = page_id
         for key, button in self._nav_buttons.items():
-            selected = key == page_id
             button.configure(
-                bg=self.CURRENT_THEME["border"] if selected else self.CURRENT_THEME["bg_secondary"],
+                bg=self.CURRENT_THEME["border"] if key == page_id
+                else self.CURRENT_THEME["bg_secondary"],
                 fg=self.CURRENT_THEME["text_primary"],
             )
 
@@ -265,17 +260,74 @@ class App(tk.Canvas):
             self.theme.DARK_THEME if self.DARK_THEME else self.theme.LIGHT_THEME
         )
         theme.CURRENT_THEME = self.CURRENT_THEME
-        self._rebuild_interface()
+        self.theme_apply()
 
-    def _rebuild_interface(self):
-        # Rebuilding keeps every page consistent with the selected palette.
-        for child in self.winfo_children():
-            child.destroy()
-        self._pages.clear()
-        self._nav_buttons.clear()
-        self._build_shell()
-        self._build_pages()
-        self.show_page(self.current_page)
+    def theme_apply(self):
+        """Recolor widgets in place; never tear down an active network session."""
+        c = self.CURRENT_THEME
+        self.configure(bg=c["bg_main"])
+        self._recolor_tree(self, c)
+        self.theme_button.configure(
+            bg=c["bg_main"], fg=c["text_primary"],
+            activebackground=c["border"], activeforeground=c["text_primary"],
+        )
+        self.update_button.configure(
+            bg=c["bg_main"], fg=c["text_primary"],
+            activebackground=c["border"], activeforeground=c["text_primary"],
+        )
+        for key, button in self._nav_buttons.items():
+            button.configure(
+                bg=c["border"] if key == self.current_page else c["bg_secondary"],
+                fg=c["text_primary"], activebackground=c["border"],
+                activeforeground=c["text_primary"],
+            )
+        if hasattr(self, "connection_panel"):
+            panel = getattr(self.connection_panel, "server_preferences", None)
+            if panel is not None:
+                panel.apply_theme(c)
+
+    def _recolor_tree(self, parent, colors):
+        surface_frames = {
+            self.topbar, self.sidebar,
+        }
+        main_frames = {
+            self, self.shell, self.body, self.page_host,
+            *self._pages.values(),
+        }
+        for child in parent.winfo_children():
+            try:
+                if isinstance(child, tk.Frame):
+                    bg = colors["bg_main"] if child in main_frames else colors["bg_secondary"]
+                    child.configure(
+                        bg=bg, highlightbackground=colors["border"],
+                    )
+                elif isinstance(child, tk.Label):
+                    parent_bg = child.master.cget("bg")
+                    child.configure(
+                        bg=parent_bg,
+                        fg=colors["text_secondary"] if child.cget("fg") in
+                        (self.theme.LIGHT_THEME["text_secondary"], self.theme.DARK_THEME["text_secondary"])
+                        else colors["text_primary"],
+                    )
+                elif isinstance(child, tk.Button):
+                    child.configure(
+                        bg=colors["bg_secondary"], fg=colors["text_primary"],
+                        activebackground=colors["border"],
+                        activeforeground=colors["text_primary"],
+                    )
+                elif isinstance(child, tk.Entry):
+                    child.configure(
+                        bg=colors["bg_main"], fg=colors["text_primary"],
+                        insertbackground=colors["text_primary"],
+                    )
+                elif isinstance(child, tk.Text):
+                    child.configure(
+                        bg=colors["bg_main"], fg=colors["text_secondary"],
+                        insertbackground=colors["text_primary"],
+                    )
+                self._recolor_tree(child, colors)
+            except tk.TclError:
+                continue
 
     def check_for_updates(self, manual=True):
         if self._update_check_running or self._update_install_running:
