@@ -4,7 +4,7 @@ version = "0.1.4"
 description = "Cross-platform keyboard and mouse sharing between laptops."
 readme = "README.md"
 authors = [
-    { name = "K3NYEL", email = "monterokenyelalexandel@gmail.com" }
+    { name = "Under Our Eyes.org", email = "underoureyes8@gmail.com" }
 ]
 requires-python = ">=3.14,<3.15"
 dependencies = [
