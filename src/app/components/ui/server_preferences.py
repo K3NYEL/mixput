@@ -115,7 +115,7 @@ class ServerPreferences(tk.Frame):
         self.client_port.pack(side=tk.RIGHT)
 
         tk.Label(
-            client_frame, text="New devices require approval on the host.",
+            client_frame, text="After connecting: move to the host's right edge to enter this laptop; move to this laptop's left edge to return.",
             bg=c["bg_secondary"], fg=c["text_secondary"],
             font=("Arial", 8), wraplength=260, justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(0, 10))
