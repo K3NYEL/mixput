@@ -24,16 +24,14 @@ class SecureChannel:
         self._receive_sequence = 0
 
     def send(self, message):
-        if self._closed:
-            return False
-        envelope = {"sequence": self._send_sequence, "message": message}
-        payload = json.dumps(envelope, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
-        if len(payload) > MAX_MESSAGE_BYTES:
-            raise ProtocolError("Message exceeds the protocol size limit.")
-        encrypted = self._cipher.encrypt(payload) + b"\n"
         with self._send_lock:
             if self._closed:
                 return False
+            envelope = {"sequence": self._send_sequence, "message": message}
+            payload = json.dumps(envelope, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+            if len(payload) > MAX_MESSAGE_BYTES:
+                raise ProtocolError("Message exceeds the protocol size limit.")
+            encrypted = self._cipher.encrypt(payload) + b"\\n"
             self._socket.sendall(encrypted)
             self._send_sequence += 1
         return True
@@ -68,12 +66,15 @@ class SecureChannel:
         return None
 
     def close(self):
-        self._closed = True
-        try:
-            self._socket.shutdown(socket.SHUT_RDWR)
-        except OSError:
-            pass
-        try:
-            self._socket.close()
-        except OSError:
-            pass
+        with self._send_lock:
+            if self._closed:
+                return
+            self._closed = True
+            try:
+                self._socket.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
+                self._socket.close()
+            except OSError:
+                pass
