@@ -131,10 +131,16 @@ class NetworkIntegrationTests(unittest.TestCase):
         self._wait(self.receiver_backend.event_received, "forwarded input event")
         self.assertEqual(self.receiver_backend.events, [event])
         self.assertEqual(self.client._ownership_epoch, self.server._ownership_epoch)
-        self.assertFalse(self.client._apply_remote_input({
+        duplicate = {
             "source_id": "host", "target_id": self.client.pairings.device_id,
+            "ownership_epoch": self.client._ownership_epoch,
+            "sequence": 1, "event": event,
+        }
+        self.assertFalse(self.client._apply_remote_input(duplicate))
+        self.assertFalse(self.client._apply_remote_input({
+            **duplicate,
             "ownership_epoch": self.client._ownership_epoch - 1,
-            "sequence": 999, "event": event,
+            "sequence": 999,
         }))
         self.assertEqual(self.receiver_backend.events, [event])
 
