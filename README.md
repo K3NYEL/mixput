@@ -1,26 +1,29 @@
 # Mixput
 
-Mixput shares one keyboard and mouse between two laptops on the same trusted local network. After explicit device approval, control can move between the computers by crossing the configured screen edges.
+Mixput connects up to **four computers total** on the same trusted local network: one host/server and up to three remote devices. After explicit approval, devices are arranged in a horizontal row and control can move to the adjacent computer by crossing a screen edge.
 
-## Current desktop layout
+## Horizontal device layout
 
-The current two-computer layout places the remote laptop to the **right** of the host:
+The host occupies position 1 (leftmost). Remote devices are placed in connection order:
 
-- Move the pointer to the host's right screen edge to enter the remote laptop.
-- Move the pointer to the remote laptop's left screen edge to return to the host.
-- Keyboard, mouse movement, buttons, and wheel events follow the computer that currently owns control.
+**Host → Device 2 → Device 3 → Device 4**
+
+- The host's right edge enters the first remote device.
+- A remote device's left edge moves to its previous neighbor; its right edge moves to its next neighbor.
+- The first and last devices have only one neighboring device.
+- Keyboard, mouse movement, buttons, and wheel events follow the device that currently owns control.
 - Mixput releases held keys and mouse buttons during a handoff or disconnect to reduce stuck-input issues.
 
-Both computers must run the same compatible Mixput protocol version and remain connected during a handoff. This release supports one remote peer per host session. Multi-monitor edge routing and configurable layouts are not implemented yet.
+All devices must run a compatible Mixput protocol version and remain connected during a handoff. The server enforces the four-device limit, counting the host.
 
-## Connect two laptops
+## Connect up to four computers
 
-1. Connect both laptops to the same trusted local network and open Mixput.
-2. Open **Devices** to find the other Mixput instance, or enter its LAN IPv4 address.
-3. On the host, choose **Start sharing**.
-4. On the other laptop, choose **Request access**.
-5. Approve the new device on the host when prompted.
-6. Move the pointer to the host's right edge to enter the remote desktop. Move to the remote desktop's left edge to return.
+1. Connect all computers to the same trusted local network and open Mixput.
+2. On the host computer, choose **Start sharing**. This computer is the server and occupies the first position.
+3. On each other computer, find the host under **Devices** or enter its LAN IPv4 address, then choose **Request access**.
+4. Approve each new device on the host when prompted. The server rejects additional devices once four computers are connected.
+5. Use the left and right screen edges to move between neighboring computers.
+6. Use the group chat in Connection to send messages to everyone in the session.
 
 The host sends UDP discovery announcements on port 45821. The authenticated input session uses the configured TCP port (default 8080). Allow both ports through the relevant firewalls on a trusted private network.
 
@@ -28,22 +31,22 @@ The host sends UDP discovery announcements on port 45821. The authenticated inpu
 
 New devices must be explicitly approved on the host. Pairing uses ephemeral X25519 key agreement and HKDF to derive a wrapping key; the generated Fernet session key is transferred inside an AES-GCM authenticated-encryption message. Input sessions use authenticated encrypted transport. Approved device credentials are stored in the user's Mixput configuration directory with restrictive file permissions on Linux. The host can revoke saved device authorization.
 
-Input events are accepted only from the authenticated peer and only by the side that currently owns control. Do not expose Mixput's TCP port to the public internet. Use it only on a trusted local network and approve devices you recognize.
+Input events are accepted only from authenticated connected devices and only from the device that currently owns control. Group chat messages are relayed only among authenticated session members over their encrypted channels. Do not expose Mixput's TCP port to the public internet. Use it only on a trusted local network and approve devices you recognize.
 
 ## Platform notes
 
-The input backend uses `pynput`. Windows and Linux X11 are supported targets. Wayland-only sessions are reported as unavailable because global input capture/injection requires a desktop-portal implementation. On Linux, use an X11 desktop session and grant the application the required input permissions.
+The input backend uses pynput. Windows and Linux X11 are supported targets. Wayland-only sessions are reported as unavailable because global input capture/injection requires a desktop-portal implementation. On Linux, use an X11 desktop session and grant the application the required input permissions.
 
 ## Validation and limitations
 
-Automated tests cover encrypted transport, input protocol validation, pairing, and loopback networking. A loopback test cannot verify physical cursor movement across two desktops. Before treating this as release-ready, verify on real devices:
+Automated tests cover encrypted transport, input protocol validation, pairing, loopback networking, multi-device capacity, horizontal handoff, and group chat. A loopback test cannot verify physical cursor movement across multiple desktops. Before treating this as release-ready, verify on real devices:
 
 - Windows to Windows, Linux X11 to Linux X11, and mixed Windows/Linux sessions.
 - Keyboard layouts, modifiers, function keys, mouse buttons, movement, and scroll.
 - Repeated edge transitions, disconnect/reconnect, host shutdown, and revocation.
 - Multi-monitor behavior and screen scaling.
 
-The edge handoff currently assumes a single-screen horizontal arrangement with the remote laptop to the right. Multi-monitor routing, vertical arrangements, Wayland portals, and seamless handling of differing display scaling are not implemented.
+The edge handoff assumes a single-screen horizontal row. Multi-monitor routing, vertical arrangements, Wayland portals, and seamless handling of differing display scaling are not implemented. Physical cursor handoff and mixed display scaling still require validation on the actual computers.
 
 ## Automatic updates
 
@@ -51,7 +54,7 @@ The updater displays download progress and reports the current phase: download, 
 
 Detailed updater logs are saved at:
 
-- Windows: `%LOCALAPPDATA%\\Mixput\\logs\\update.log`
-- Linux: `~/.local/state/mixput/logs/update.log` (or `$XDG_STATE_HOME/mixput/logs/update.log` when configured)
+- Windows: %LOCALAPPDATA%/Mixput/logs/update.log
+- Linux: ~/.local/state/mixput/logs/update.log (or $XDG_STATE_HOME/mixput/logs/update.log when configured)
 
-Windows installations in protected locations may request administrator approval through UAC. Linux installations in protected locations may request authorization through `pkexec`; per-user installations do not need elevation. If a restart does not happen, open the log above and check the last `ERROR` entry.
+Windows installations in protected locations may request administrator approval through UAC. Linux installations in protected locations may request authorization through pkexec; per-user installations do not need elevation. If a restart does not happen, open the log above and check the last ERROR entry.
