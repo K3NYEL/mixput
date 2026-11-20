@@ -87,7 +87,7 @@ class ServerPreferences(tk.Frame):
         self.stop_button.pack(side=tk.LEFT)
 
         tk.Label(
-            host_frame, text="Authorized devices", bg=c["bg_secondary"],
+            host_frame, text="Authorized devices (up to 3 connected)", bg=c["bg_secondary"],
             fg=c["text_secondary"], font=("Arial", 8, "bold")
         ).pack(anchor=tk.W)
         self.authorized_list = tk.Listbox(
@@ -119,7 +119,7 @@ class ServerPreferences(tk.Frame):
         self.client_port.pack(side=tk.RIGHT)
 
         tk.Label(
-            client_frame, text="After connecting: move to the host's right edge to enter this laptop; move to this laptop's left edge to return.",
+            client_frame, text="Devices form a horizontal row. Move to the left or right edge to switch to the neighboring computer. Maximum: 4 devices including the server.",
             bg=c["bg_secondary"], fg=c["text_secondary"],
             font=("Arial", 8), wraplength=260, justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(0, 10))
