@@ -142,7 +142,13 @@ class NetworkServer:
         with self._lock:
             if self._control_owner != "host":
                 return
-        self._send_to_owner({"version": PROTOCOL_VERSION, "kind": "input", "event": event})
+            peer = next(iter(sorted(self._peers.values(), key=lambda item: item["index"])), None)
+        if peer is None:
+            return
+        try:
+            peer["channel"].send({"version": PROTOCOL_VERSION, "kind": "input", "event": event})
+        except (OSError, ProtocolError, ValueError) as error:
+            self.on_log(f"[Mixput] Could not transmit input: {error}")
 
     def send_chat(self, text):
         if not isinstance(text, str):
