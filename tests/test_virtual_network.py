@@ -1,5 +1,8 @@
+import tempfile
 import unittest
+from pathlib import Path
 
+from app.components.core.pairing_store import PairingStore
 from app.components.core.virtual_network import VirtualNetworkManager
 
 
@@ -17,6 +20,23 @@ class VirtualNetworkTests(unittest.TestCase):
         self.assertTrue(first.startswith("10.77."))
         self.assertTrue(second.startswith("10.77."))
         self.assertEqual(network.address_for("b" * 32), first)
+
+    def test_saved_device_address_survives_manager_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "pairing.json"
+            store = PairingStore(path)
+            host_id, client_id = "a" * 32, "b" * 32
+            store.authorize_client(client_id, "Laptop B", "192.168.1.20", "test-token")
+
+            first_manager = VirtualNetworkManager(host_id)
+            assigned = first_manager.address_for(client_id)
+            self.assertTrue(store.set_client_virtual_ip(client_id, assigned))
+
+            reloaded_store = PairingStore(path)
+            second_manager = VirtualNetworkManager(host_id)
+            saved = reloaded_store.get_authorized_client(client_id)["virtual_ip"]
+            self.assertEqual(second_manager.reserve(client_id, saved), assigned)
+            self.assertEqual(second_manager.address_for(client_id), assigned)
 
     def test_invalid_device_identity_is_rejected(self):
         network = VirtualNetworkManager("a" * 32)
