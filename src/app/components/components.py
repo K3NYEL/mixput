@@ -1,7 +1,10 @@
 import socket
+import sys
 import threading
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox
+from PIL import Image, ImageTk
 
 from app.components import theme
 from .ui.mixput_frame import create_mixput_frame
@@ -60,13 +63,35 @@ class App(tk.Canvas):
         self.topbar.pack(fill=tk.X, padx=12, pady=(12, 8))
 
         brand = tk.Frame(self.topbar, bg=c["bg_secondary"])
-        brand.pack(side=tk.LEFT, padx=16, pady=11)
+        brand.pack(side=tk.LEFT, padx=16, pady=9)
+
+        # Keep the app mark beside the product name in the top navigation.
+        self._brand_icon = None
+        icon_root = Path(
+            getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3])
+        )
+        icon_path = icon_root / "public" / "assets" / "mixput-ico.png"
+        if icon_path.is_file():
+            try:
+                with Image.open(icon_path) as source:
+                    icon_image = source.convert("RGBA")
+                    icon_image.thumbnail((36, 36), Image.Resampling.LANCZOS)
+                    self._brand_icon = ImageTk.PhotoImage(icon_image)
+                tk.Label(
+                    brand, image=self._brand_icon,
+                    bg=c["bg_secondary"], bd=0,
+                ).pack(side=tk.LEFT, padx=(0, 10))
+            except (OSError, tk.TclError):
+                self._brand_icon = None
+
+        brand_text = tk.Frame(brand, bg=c["bg_secondary"])
+        brand_text.pack(side=tk.LEFT, anchor=tk.CENTER)
         tk.Label(
-            brand, text="MIXPUT", font=("Arial", 16, "bold"),
+            brand_text, text="MIXPUT", font=("Arial", 16, "bold"),
             bg=c["bg_secondary"], fg=c["text_primary"],
         ).pack(anchor=tk.W)
         tk.Label(
-            brand, text=f"Version {self.current_version}",
+            brand_text, text=f"Version {self.current_version}",
             font=("Arial", 9), bg=c["bg_secondary"],
             fg=c["text_secondary"],
         ).pack(anchor=tk.W, pady=(1, 0))
