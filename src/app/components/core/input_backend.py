@@ -1,11 +1,11 @@
-"""Cross-platform input capture/playback with edge-triggered control handoff."""
+"""Cross-platform input capture/playback with left/right edge handoff."""
 import os
 import platform
 import threading
 
 
 class InputBackendError(RuntimeError):
-    """Raised when the current desktop cannot provide input access."""
+    pass
 
 
 class InputBackend:
@@ -21,7 +21,7 @@ class InputBackend:
         self._pressed_buttons = set()
         self._lock = threading.RLock()
         self._capture_enabled = False
-        self._edge_side = None
+        self._edge_sides = set()
         self._screen_size = None
         self._edge_margin = 2
         self._edge_latched = False
@@ -41,12 +41,13 @@ class InputBackend:
         return True, "Ready"
 
     def configure_edge_switch(self, side, screen_size, on_edge=None, margin=2):
-        if side not in ("left", "right"):
-            raise ValueError("Edge side must be 'left' or 'right'.")
+        sides = {side} if isinstance(side, str) else set(side or ())
+        if not sides.issubset({"left", "right"}):
+            raise ValueError("Edge sides must contain only 'left' and/or 'right'.")
         width, height = screen_size
         if int(width) < 2 or int(height) < 2:
             raise ValueError("Invalid screen dimensions.")
-        self._edge_side = side
+        self._edge_sides = sides
         self._screen_size = (int(width), int(height))
         self._edge_margin = max(1, min(int(margin), 12))
         if on_edge is not None:
@@ -60,7 +61,6 @@ class InputBackend:
         self._pynput = (keyboard, mouse)
 
     def start_capture(self):
-        """Start listeners; events are emitted only while this machine owns control."""
         with self._lock:
             if self._keyboard_listener and self._mouse_listener:
                 self._capture_enabled = True
@@ -92,18 +92,15 @@ class InputBackend:
                 if self._suppress_move:
                     self._suppress_move = False
                     return
-                if self._edge_side and self._screen_size and not self._edge_latched:
+                if self._edge_sides and self._screen_size and not self._edge_latched:
                     width, height = self._screen_size
-                    at_edge = (
-                        self._edge_side == "right" and position[0] >= width - self._edge_margin
-                    ) or (
-                        self._edge_side == "left" and position[0] <= self._edge_margin - 1
-                    )
-                    if at_edge and 0 <= position[1] < height:
+                    side = "right" if "right" in self._edge_sides and position[0] >= width - self._edge_margin else (
+                        "left" if "left" in self._edge_sides and position[0] <= self._edge_margin - 1 else None)
+                    if side and 0 <= position[1] < height:
                         self._edge_latched = True
                         with self._lock:
                             self._capture_enabled = False
-                        self.on_edge(self._edge_side)
+                        self.on_edge(side)
                         return
                 if previous is not None:
                     dx, dy = position[0] - previous[0], position[1] - previous[1]
@@ -112,23 +109,15 @@ class InputBackend:
 
             def on_click(x, y, button, pressed):
                 if is_enabled():
-                    self.on_event({
-                        "type": "mouse_button",
-                        "button": str(button).replace("Button.", ""),
-                        "pressed": bool(pressed),
-                    })
+                    self.on_event({"type": "mouse_button", "button": str(button).replace("Button.", ""), "pressed": bool(pressed)})
 
             def on_scroll(x, y, dx, dy):
                 if is_enabled():
                     self.on_event({"type": "mouse_scroll", "dx": int(dx), "dy": int(dy)})
 
-            self._keyboard_listener = keyboard.Listener(
-                on_press=lambda key: key_event("key_down", key),
-                on_release=lambda key: key_event("key_up", key),
-            )
-            self._mouse_listener = mouse.Listener(
-                on_move=on_move, on_click=on_click, on_scroll=on_scroll
-            )
+            self._keyboard_listener = keyboard.Listener(on_press=lambda key: key_event("key_down", key),
+                                                        on_release=lambda key: key_event("key_up", key))
+            self._mouse_listener = mouse.Listener(on_move=on_move, on_click=on_click, on_scroll=on_scroll)
             self._capture_enabled = True
             self._edge_latched = False
             self._keyboard_listener.start()
@@ -141,7 +130,6 @@ class InputBackend:
             self._last_position = None
 
     def warp_to_edge(self, side):
-        """Place the local pointer just inside the edge used to return control."""
         if side not in ("left", "right"):
             return False
         try:
@@ -173,7 +161,6 @@ class InputBackend:
         self.release_all()
 
     def apply_event(self, event):
-        """Apply one event received through the authenticated Mixput channel."""
         if not isinstance(event, dict):
             return False
         kind = event.get("type")
@@ -184,7 +171,6 @@ class InputBackend:
             if self._controller is None:
                 self._controller = (keyboard.Controller(), mouse.Controller())
             key_controller, mouse_controller = self._controller
-
             if kind in ("key_down", "key_up"):
                 key_name = event.get("key")
                 if not isinstance(key_name, str) or not 0 < len(key_name) <= 32:
@@ -207,8 +193,7 @@ class InputBackend:
                 x, y = mouse_controller.position
                 mouse_controller.position = (x + dx, y + dy)
             elif kind == "mouse_button":
-                button_name = event.get("button")
-                button = getattr(mouse.Button, button_name, None)
+                button = getattr(mouse.Button, event.get("button"), None)
                 if button is None:
                     return False
                 if event.get("pressed") is True:
