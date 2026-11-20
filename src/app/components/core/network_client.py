@@ -152,6 +152,8 @@ class NetworkClient:
                         if self.input_backend is not None and not self.input_backend.apply_event(event):
                             self.on_message("[Mixput] An input event could not be applied.")
                 elif kind == "control_switch" and message.get("owner") == "client":
+                    if self.input_backend is not None:
+                        self.input_backend.release_all()
                     with self._lock:
                         self._control_owner = "client"
                     if self.input_backend is not None:
