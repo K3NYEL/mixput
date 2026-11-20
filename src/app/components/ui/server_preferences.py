@@ -28,7 +28,9 @@ class ServerPreferences(tk.Frame):
             on_status=self._queue_client_status,
             input_backend=self.remote_input,
         )
-        self._server_status = "stopped"\n        self._client_status = "disconnected"\n        self._build()
+        self._server_status = "stopped"
+        self._client_status = "disconnected"
+        self._build()
 
     def _build(self):
         c = self.colors
@@ -256,36 +258,6 @@ class ServerPreferences(tk.Frame):
         self.start_button.configure(state=tk.DISABLED if active else tk.NORMAL)
         self.stop_button.configure(state=tk.NORMAL if active else tk.DISABLED)
         self._refresh_status()
-
-    def _apply_client_status(self, status):
-        self._client_status = status
-        connected = status in ("connecting", "connected")
-        self.connect_button.configure(state=tk.DISABLED if connected else tk.NORMAL)
-        self.disconnect_button.configure(state=tk.NORMAL if connected else tk.DISABLED)
-        self._refresh_status()
-
-    def _refresh_status(self):
-        server_labels = {
-            "stopped": "Stopped",
-            "listening": "Sharing",
-            "authenticating": "Pairing",
-            "connected": "Sharing active",
-            "error": "Sharing error",
-        }
-        client_labels = {
-            "disconnected": "Disconnected",
-            "connecting": "Connecting",
-            "connected": "Connected",
-        }
-        server = server_labels.get(self._server_status, self._server_status.title())
-        client = client_labels.get(self._client_status, self._client_status.title())
-        self.status_label.configure(text=f"{server}  ·  {client}")
-
-    def _queue_client_status(self, status):
-        try:
-            self.after(0, self._apply_client_status, status)
-        except tk.TclError:
-            pass
 
     def _queue_client_status(self, status):
         try:
