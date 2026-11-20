@@ -4,7 +4,7 @@ from tkinter import messagebox
 
 from app.components import theme
 from app.components.core.input_backend import InputBackend
-from app.components.core.network import get_active_network_info
+from app.components.core.network import get_active_network_info, get_network_details
 from app.components.core.network_client import NetworkClient
 from app.components.core.network_server import NetworkServer
 
@@ -66,14 +66,31 @@ class ServerPreferences(tk.Frame):
             fg=c["text_primary"], padx=12, pady=10, font=("Arial", 9, "bold")
         )
         host_frame.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=0)
-        interface, local_ip = get_active_network_info()
-        self.local_ip = local_ip
-        self.local_ip_label = tk.Label(
-            host_frame, text=f"{local_ip}  ·  {interface}",
-            bg=c["bg_secondary"], fg=c["text_primary"],
-            font=("Arial", 10, "bold"), anchor=tk.W
+        network_frame = tk.Frame(host_frame, bg=c["bg_secondary"])
+        network_frame.pack(fill=tk.X, pady=(2, 10))
+        self.network_value_labels = {}
+        for label in ("IP address", "Subnet mask", "DNS servers", "Network interface"):
+            row = tk.Frame(network_frame, bg=c["bg_secondary"])
+            row.pack(fill=tk.X, pady=2)
+            tk.Label(
+                row, text=label, width=18, anchor=tk.W,
+                bg=c["bg_secondary"], fg=c["text_secondary"],
+                font=("Arial", 9),
+            ).pack(side=tk.LEFT)
+            value = tk.Label(
+                row, text="Loading…", anchor=tk.W,
+                bg=c["bg_secondary"], fg=c["text_primary"],
+                font=("Arial", 9, "bold"),
+            )
+            value.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            self.network_value_labels[label] = value
+        self.local_ip = "0.0.0.0"
+        self.local_ip_label = self.network_value_labels["IP address"]
+        self.refresh_network_button = self._button(
+            host_frame, "Refresh network information", self.refresh_network_info
         )
-        self.local_ip_label.pack(fill=tk.X, pady=(2, 10))
+        self.refresh_network_button.pack(anchor=tk.W, pady=(4, 8))
+        self.refresh_network_info()
 
         port_row = tk.Frame(host_frame, bg=c["bg_secondary"])
         port_row.pack(fill=tk.X, pady=(0, 8))
@@ -243,6 +260,21 @@ class ServerPreferences(tk.Frame):
         ):
             self.server.revoke_device(device["id"])
             self._refresh_authorized_devices()
+
+    def refresh_network_info(self):
+        interface, local_ip, subnet_mask, dns_servers = get_network_details()
+        self.local_ip = local_ip
+        values = {
+            "IP address": local_ip,
+            "Subnet mask": subnet_mask,
+            "DNS servers": dns_servers,
+            "Network interface": interface,
+        }
+        for label, value in values.items():
+            widget = self.network_value_labels.get(label)
+            if widget is not None:
+                widget.configure(text=value)
+        return values
 
     def start_server(self):
         available, reason = InputBackend.availability()

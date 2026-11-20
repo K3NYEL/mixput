@@ -1,5 +1,8 @@
 import ipaddress
 import socket
+import platform
+import re
+import subprocess
 
 import psutil
 
@@ -60,3 +63,58 @@ def get_active_network_info() -> tuple[str, str]:
         return candidates[0]
 
     return "Sin conexión", "0.0.0.0"
+
+
+
+def get_network_details() -> tuple[str, str, str, str]:
+    """Return active IPv4 interface, address, subnet mask and DNS servers.
+
+    DNS values are read from the operating system's resolver configuration;
+    unavailable values are reported explicitly rather than guessed.
+    """
+    interface, address = get_active_network_info()
+    netmask = "Unavailable"
+    dns_servers = []
+
+    if address != "0.0.0.0":
+        for entry in psutil.net_if_addrs().get(interface, []):
+            if entry.family == socket.AF_INET and entry.address == address:
+                netmask = entry.netmask or "Unavailable"
+                break
+
+    try:
+        if platform.system() == "Windows":
+            result = subprocess.run(
+                ["ipconfig", "/all"],
+                capture_output=True,
+                text=True,
+                timeout=4,
+                check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            lines = result.stdout.splitlines()
+            capture = False
+            for line in lines:
+                if re.search(r"DNS Servers?\s*:", line, re.IGNORECASE):
+                    capture = True
+                    value = line.split(":", 1)[1].strip()
+                    if value and _is_usable_ipv4(value):
+                        dns_servers.append(value)
+                    continue
+                if capture:
+                    value = line.strip()
+                    if value and _is_usable_ipv4(value):
+                        dns_servers.append(value)
+                    else:
+                        capture = False
+        else:
+            with open("/etc/resolv.conf", encoding="utf-8") as resolver:
+                for line in resolver:
+                    parts = line.split()
+                    if len(parts) >= 2 and parts[0] == "nameserver" and _is_usable_ipv4(parts[1]):
+                        dns_servers.append(parts[1])
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+    dns_text = ", ".join(dict.fromkeys(dns_servers)) if dns_servers else "Unavailable"
+    return interface, address, netmask, dns_text
