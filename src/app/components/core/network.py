@@ -1,4 +1,5 @@
 import ipaddress
+import locale
 import socket
 import platform
 import re
@@ -87,15 +88,27 @@ def get_network_details() -> tuple[str, str, str, str]:
             result = subprocess.run(
                 ["ipconfig", "/all"],
                 capture_output=True,
-                text=True,
+                text=False,
                 timeout=4,
                 check=False,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
-            lines = result.stdout.splitlines()
+            # ipconfig uses the Windows console code page, not necessarily UTF-8.
+            # Decode defensively: a decoding error must never break application startup.
+            raw_output = result.stdout or b""
+            if isinstance(raw_output, bytes):
+                encoding = locale.getpreferredencoding(False) or "cp1252"
+                output = raw_output.decode(encoding, errors="replace")
+            else:
+                output = str(raw_output)
+            lines = output.splitlines()
             capture = False
+            dns_header = re.compile(
+                r"(?:DNS Servers?|Servidores DNS)\s*:",
+                re.IGNORECASE,
+            )
             for line in lines:
-                if re.search(r"DNS Servers?\s*:", line, re.IGNORECASE):
+                if dns_header.search(line):
                     capture = True
                     value = line.split(":", 1)[1].strip()
                     if value and _is_usable_ipv4(value):
