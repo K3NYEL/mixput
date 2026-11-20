@@ -87,6 +87,15 @@ class PairingStore:
             }
             self._save()
 
+    def set_client_virtual_ip(self, device_id, virtual_ip):
+        with self._lock:
+            record = self._data["authorized_clients"].get(device_id)
+            if not isinstance(record, dict):
+                return False
+            record["virtual_ip"] = str(virtual_ip)
+            self._save()
+            return True
+
     def get_authorized_client(self, device_id):
         with self._lock:
             item = self._data["authorized_clients"].get(device_id)
