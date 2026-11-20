@@ -38,14 +38,11 @@ enter that host address; 127.0.0.1 is not used as a cross-device address.
 
 ## Security
 
-New devices must be explicitly approved on the host. Pairing uses ephemeral
-X25519 key agreement and HKDF to derive a temporary wrapping key; the generated
-Fernet session key is transferred inside an AES-GCM authenticated-encryption
-message. Input sessions then use Fernet authentication/encryption and per-direction
-sequence numbers. Approved device credentials are stored in the user's Mixput
-configuration directory with restrictive file permissions on Linux. The host can
-revoke any saved device authorization. Use Mixput on a trusted local network and
-allow the selected TCP port through the host firewall.
+Pairing uses a freshly generated high-entropy Fernet key. The handshake and input
+events are authenticated and encrypted, with per-direction sequence numbers to
+reject replayed frames. Only share the key with a device you trust. Stop the
+session when finished and use a trusted local network; firewall rules may need
+to allow the selected TCP port.
 
 ## Platform notes
 

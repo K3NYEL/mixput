@@ -178,7 +178,7 @@ class ServerPreferences(tk.Frame):
     def _ask_pairing_request(self, request):
         approved = messagebox.askyesno(
             "Mixput device pairing",
-            f'{request["name"]} ({request["ip"]}) wants permission to use this computer\\'s keyboard and mouse.\\n\\nAllow this device?',
+            f'{request["name"]} ({request["ip"]}) wants permission to control this computer.\\n\\nAllow this device?',
             parent=self.winfo_toplevel(),
         )
         self.server.approve_pairing(request["request_id"], approved)
