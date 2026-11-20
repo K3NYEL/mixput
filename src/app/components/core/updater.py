@@ -152,7 +152,7 @@ def _apply_linux_update(extracted_dir, app_dir, executable, stage_dir):
     script = f"""#!/usr/bin/env bash
 set -Eeuo pipefail
 LOG={q(str(log_path))}
-log() {{ printf '[%s] %s\\n' "$(date --iso-8601=seconds)" "$*" >> "$LOG"; }}
+log() {{ printf '[%s] %s\n' "$(date --iso-8601=seconds)" "$*" >> "$LOG"; }}
 trap 'code=$?; log "ERROR at line $LINENO (exit $code)"' ERR
 log 'Updater started; waiting for Mixput to exit.'
 while kill -0 {os.getpid()} 2>/dev/null; do sleep 1; done
@@ -205,9 +205,9 @@ def consume_update_diagnostics() -> str | None:
         last_start = max((i for i, line in enumerate(lines) if "APPLICATION STARTED" in line), default=-1)
         details = None
         if last_error > last_start:
-            details = "\\n".join(lines[max(0, last_error - 2): min(len(lines), last_error + 8)])
+            details = "\n".join(lines[max(0, last_error - 2): min(len(lines), last_error + 8)])
         with log_path.open("a", encoding="utf-8") as stream:
-            stream.write(f"\\n[{__import__('datetime').datetime.now().isoformat(timespec='seconds')}] APPLICATION STARTED\\n")
+            stream.write(f"\n[{__import__('datetime').datetime.now().isoformat(timespec='seconds')}] APPLICATION STARTED\n")
         return details
     except OSError:
         return None
