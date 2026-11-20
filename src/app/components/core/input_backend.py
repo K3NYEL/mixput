@@ -1,4 +1,4 @@
-"""Cross-platform input capture and playback for explicit Mixput sessions."""
+"""Cross-platform input capture/playback with edge-triggered control handoff."""
 import os
 import platform
 import threading
@@ -9,8 +9,9 @@ class InputBackendError(RuntimeError):
 
 
 class InputBackend:
-    def __init__(self, on_event=None):
+    def __init__(self, on_event=None, on_edge=None):
         self.on_event = on_event or (lambda event: None)
+        self.on_edge = on_edge or (lambda side: None)
         self._keyboard_listener = None
         self._mouse_listener = None
         self._controller = None
@@ -19,6 +20,12 @@ class InputBackend:
         self._pressed_keys = set()
         self._pressed_buttons = set()
         self._lock = threading.RLock()
+        self._capture_enabled = False
+        self._edge_side = None
+        self._screen_size = None
+        self._edge_margin = 2
+        self._edge_latched = False
+        self._suppress_move = False
 
     @staticmethod
     def availability():
@@ -33,6 +40,18 @@ class InputBackend:
             return False, f"Input support is unavailable: {error}"
         return True, "Ready"
 
+    def configure_edge_switch(self, side, screen_size, on_edge=None, margin=2):
+        if side not in ("left", "right"):
+            raise ValueError("Edge side must be 'left' or 'right'.")
+        width, height = screen_size
+        if int(width) < 2 or int(height) < 2:
+            raise ValueError("Invalid screen dimensions.")
+        self._edge_side = side
+        self._screen_size = (int(width), int(height))
+        self._edge_margin = max(1, min(int(margin), 12))
+        if on_edge is not None:
+            self.on_edge = on_edge
+
     def _load(self):
         available, reason = self.availability()
         if not available:
@@ -41,14 +60,22 @@ class InputBackend:
         self._pynput = (keyboard, mouse)
 
     def start_capture(self):
-        """Capture local input only after a peer has authenticated."""
+        """Start listeners; events are emitted only while this machine owns control."""
         with self._lock:
-            if self._keyboard_listener or self._mouse_listener:
+            if self._keyboard_listener and self._mouse_listener:
+                self._capture_enabled = True
+                self._edge_latched = False
                 return
             self._load()
             keyboard, mouse = self._pynput
 
+            def is_enabled():
+                with self._lock:
+                    return self._capture_enabled
+
             def key_event(kind, key):
+                if not is_enabled():
+                    return
                 try:
                     value = key.char if key.char is not None else key.name
                 except AttributeError:
@@ -60,42 +87,90 @@ class InputBackend:
                 position = (int(x), int(y))
                 previous = self._last_position
                 self._last_position = position
+                if not is_enabled():
+                    return
+                if self._suppress_move:
+                    self._suppress_move = False
+                    return
+                if self._edge_side and self._screen_size and not self._edge_latched:
+                    width, height = self._screen_size
+                    at_edge = (
+                        self._edge_side == "right" and position[0] >= width - self._edge_margin
+                    ) or (
+                        self._edge_side == "left" and position[0] <= self._edge_margin - 1
+                    )
+                    if at_edge and 0 <= position[1] < height:
+                        self._edge_latched = True
+                        with self._lock:
+                            self._capture_enabled = False
+                        self.on_edge(self._edge_side)
+                        return
                 if previous is not None:
                     dx, dy = position[0] - previous[0], position[1] - previous[1]
                     if dx or dy:
                         self.on_event({"type": "mouse_move", "dx": dx, "dy": dy})
 
             def on_click(x, y, button, pressed):
-                self.on_event({
-                    "type": "mouse_button",
-                    "button": str(button).replace("Button.", ""),
-                    "pressed": bool(pressed),
-                })
+                if is_enabled():
+                    self.on_event({
+                        "type": "mouse_button",
+                        "button": str(button).replace("Button.", ""),
+                        "pressed": bool(pressed),
+                    })
 
             def on_scroll(x, y, dx, dy):
-                self.on_event({"type": "mouse_scroll", "dx": int(dx), "dy": int(dy)})
+                if is_enabled():
+                    self.on_event({"type": "mouse_scroll", "dx": int(dx), "dy": int(dy)})
 
-            keyboard_listener = keyboard.Listener(
+            self._keyboard_listener = keyboard.Listener(
                 on_press=lambda key: key_event("key_down", key),
                 on_release=lambda key: key_event("key_up", key),
             )
-            mouse_listener = mouse.Listener(
+            self._mouse_listener = mouse.Listener(
                 on_move=on_move, on_click=on_click, on_scroll=on_scroll
             )
-            self._keyboard_listener = keyboard_listener
-            self._mouse_listener = mouse_listener
-            keyboard_listener.start()
-            mouse_listener.start()
+            self._capture_enabled = True
+            self._edge_latched = False
+            self._keyboard_listener.start()
+            self._mouse_listener.start()
+
+    def set_capture_enabled(self, enabled):
+        with self._lock:
+            self._capture_enabled = bool(enabled)
+            self._edge_latched = False
+            self._last_position = None
+
+    def warp_to_edge(self, side):
+        """Place the local pointer just inside the edge used to return control."""
+        if side not in ("left", "right"):
+            return False
+        try:
+            if self._pynput is None:
+                self._load()
+            _, mouse = self._pynput
+            if self._controller is None:
+                from pynput import keyboard
+                self._controller = (keyboard.Controller(), mouse.Controller())
+            width, height = self._screen_size or (1920, 1080)
+            x = 2 if side == "left" else max(2, width - 3)
+            self._suppress_move = True
+            self._controller[1].position = (x, max(1, height // 2))
+            self._last_position = (x, max(1, height // 2))
+            return True
+        except (InputBackendError, OSError, ValueError, TypeError):
+            return False
 
     def stop_capture(self):
         with self._lock:
             listeners = (self._keyboard_listener, self._mouse_listener)
             self._keyboard_listener = None
             self._mouse_listener = None
+            self._capture_enabled = False
             self._last_position = None
         for listener in listeners:
             if listener:
                 listener.stop()
+        self.release_all()
 
     def apply_event(self, event):
         """Apply one event received through the authenticated Mixput channel."""

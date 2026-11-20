@@ -1,74 +1,46 @@
 # Mixput
 
-Mixput is a cross-platform desktop application for sharing a keyboard and mouse
-between laptops on the same local network.
+Mixput shares one keyboard and mouse between two laptops on the same trusted local network. After explicit device approval, control can move between the computers by crossing the configured screen edges.
 
-## Supported connection direction
+## Current desktop layout
 
-The current input-sharing session has one host and one receiver:
+The current two-computer layout places the remote laptop to the **right** of the host:
 
-- Windows host to Windows receiver
-- Linux host to Linux receiver (X11)
-- Windows host to Linux receiver (X11)
-- Linux host (X11) to Windows receiver
+- Move the pointer to the host's right screen edge to enter the remote laptop.
+- Move the pointer to the remote laptop's left screen edge to return to the host.
+- Keyboard, mouse movement, buttons, and wheel events follow the computer that currently owns control.
+- Mixput releases held keys and mouse buttons during a handoff or disconnect to reduce stuck-input issues.
 
-The host laptop captures its local keyboard and mouse. The receiver laptop applies
-the events locally after a successful pairing handshake. This first implementation
-forwards input in one direction; seamless cursor-edge switching is not implemented.
+Both computers must run the same compatible Mixput protocol version and remain connected during a handoff. This release supports one remote peer per host session. Multi-monitor edge routing and configurable layouts are not implemented yet.
 
 ## Connect two laptops
 
-1. Connect both laptops to the same trusted local network and open Mixput on both.
-2. Open **Devices** to see other Mixput instances discovered on the LAN.
-3. On the host laptop, choose **Start sharing** in **Connection**.
-4. Select the host in **Devices** and choose **Use selected device**. Its IP and port
-   are filled into the connection form.
-5. Enter the pairing key shown by the host and choose **Connect**.
-6. Choose **Stop** or **Disconnect** to end the session.
+1. Connect both laptops to the same trusted local network and open Mixput.
+2. Open **Devices** to find the other Mixput instance, or enter its LAN IPv4 address.
+3. On the host, choose **Start sharing**.
+4. On the other laptop, choose **Request access**.
+5. Approve the new device on the host when prompted.
+6. Move the pointer to the host's right edge to enter the remote desktop. Move to the remote desktop's left edge to return.
 
-Mixput sends a small UDP announcement on port 45821 every two seconds and expires
-devices that have not announced for eight seconds. The announcement contains only
-the Mixput protocol version, a temporary device identifier, computer name, TCP port,
-and whether sharing is active. It does not contain the pairing key or input events.
-Manual IP entry remains available if broadcast discovery is blocked by the network.
-
-The host listens on its network interfaces (0.0.0.0), but Mixput displays the
-active interface's real LAN IPv4 address for the other laptop. The receiver must
-enter that host address; 127.0.0.1 is not used as a cross-device address.
+The host sends UDP discovery announcements on port 45821. The authenticated input session uses the configured TCP port (default 8080). Allow both ports through the relevant firewalls on a trusted private network.
 
 ## Security
 
-New devices must be explicitly approved on the host. Pairing uses ephemeral
-X25519 key agreement and HKDF to derive a temporary wrapping key; the generated
-Fernet session key is transferred inside an AES-GCM authenticated-encryption
-message. Input sessions then use Fernet authentication/encryption and per-direction
-sequence numbers. Approved device credentials are stored in the user's Mixput
-configuration directory with restrictive file permissions on Linux. The host can
-revoke any saved device authorization. Use Mixput on a trusted local network and
-allow the selected TCP port through the host firewall.
+New devices must be explicitly approved on the host. Pairing uses ephemeral X25519 key agreement and HKDF to derive a wrapping key; the generated Fernet session key is transferred inside an AES-GCM authenticated-encryption message. Input sessions use authenticated encrypted transport. Approved device credentials are stored in the user's Mixput configuration directory with restrictive file permissions on Linux. The host can revoke saved device authorization.
+
+Input events are accepted only from the authenticated peer and only by the side that currently owns control. Do not expose Mixput's TCP port to the public internet. Use it only on a trusted local network and approve devices you recognize.
 
 ## Platform notes
 
-The input backend uses `pynput`. Windows and Linux X11 are the initial desktop
-targets. Wayland-only sessions are currently reported as unavailable because
-global input capture/injection needs a desktop-portal implementation.
+The input backend uses `pynput`. Windows and Linux X11 are supported targets. Wayland-only sessions are reported as unavailable because global input capture/injection requires a desktop-portal implementation. On Linux, use an X11 desktop session and grant the application the required input permissions.
 
 ## Validation and limitations
 
-The repository includes automated tests for encrypted transport, protocol input
-validation, and a loopback host-to-receiver session. CI runs these tests on both
-Windows and Linux before packaging.
-
-A loopback test does not replace testing with two physical laptops. Before
-treating a release as stable, verify the following on real devices:
+Automated tests cover encrypted transport, input protocol validation, pairing, and loopback networking. A loopback test cannot verify physical cursor movement across two desktops. Before treating this as release-ready, verify on real devices:
 
 - Windows to Windows, Linux X11 to Linux X11, and mixed Windows/Linux sessions.
-- Keyboard layout, modifiers, function keys, mouse buttons, movement, and scroll.
-- Disconnect/reconnect behavior and recovery after the host stops sharing.
-- Firewall prompts, LAN address selection, and installer behavior on clean systems.
+- Keyboard layouts, modifiers, function keys, mouse buttons, movement, and scroll.
+- Repeated edge transitions, disconnect/reconnect, host shutdown, and revocation.
+- Multi-monitor behavior and screen scaling.
 
-Seamless cursor-edge transitions and Linux Wayland portal support are not
-implemented. Input forwarding remains one-way: the host controls the receiver
-after explicit pairing. UDP broadcast discovery can be blocked by guest Wi-Fi,
-client isolation, VLAN separation, or host firewall rules; in that case, use manual
-IP entry. The TCP sharing port still needs to be allowed by the firewall.
+The edge handoff currently assumes a single-screen horizontal arrangement with the remote laptop to the right. Multi-monitor routing, vertical arrangements, Wayland portals, and seamless handling of differing display scaling are not implemented.

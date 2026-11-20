@@ -15,8 +15,13 @@ class ServerPreferences(tk.Frame):
     def __init__(self, parent):
         self.colors = theme.CURRENT_THEME
         super().__init__(parent, bg=self.colors["bg_secondary"])
-        self.host_input = InputBackend(on_event=lambda event: self.server._send_input(event))
+        self.host_input = InputBackend()
         self.remote_input = InputBackend()
+        screen_size = (self.winfo_screenwidth(), self.winfo_screenheight())
+        # The host is arranged to the left of the remote desktop:
+        # right edge enters the remote machine; its left edge returns.
+        self.host_input.configure_edge_switch("right", screen_size)
+        self.remote_input.configure_edge_switch("left", screen_size)
         self.server = NetworkServer(
             on_log=self._queue_log,
             on_status=self._queue_server_status,
@@ -110,7 +115,7 @@ class ServerPreferences(tk.Frame):
         self.client_port.pack(side=tk.RIGHT)
 
         tk.Label(
-            client_frame, text="New devices require approval on the host.",
+            client_frame, text="After connecting: move to the host's right edge to enter this laptop; move to this laptop's left edge to return.",
             bg=c["bg_secondary"], fg=c["text_secondary"],
             font=("Arial", 8), wraplength=260, justify=tk.LEFT,
         ).pack(anchor=tk.W, pady=(0, 10))

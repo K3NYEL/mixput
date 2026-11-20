@@ -1,4 +1,4 @@
-"""LAN host with explicit approval for new devices and persistent revocation."""
+"""LAN host with authenticated input forwarding and edge-based control handoff."""
 import socket
 import threading
 import uuid
@@ -29,6 +29,7 @@ class NetworkServer:
         self._capture = None
         self._pending = {}
         self._client_device_id = None
+        self._control_owner = "host"
 
     def start(self, host="0.0.0.0", port=8080):
         with self._lock:
@@ -43,6 +44,38 @@ class NetworkServer:
 
     def set_input_backend(self, backend):
         self._capture = backend
+        backend.on_event = self._send_input
+        backend.on_edge = self._on_local_edge
+
+    def _send_control(self, kind, **values):
+        with self._lock:
+            channel = self._channel
+        if channel is None:
+            return False
+        try:
+            channel.send({"version": PROTOCOL_VERSION, "kind": kind, **values})
+            return True
+        except (OSError, ProtocolError, ValueError):
+            return False
+
+    def _on_local_edge(self, side):
+        if side != "right":
+            return
+        with self._lock:
+            if self._control_owner != "host" or self._channel is None:
+                return
+            self._control_owner = "client"
+            channel = self._channel
+        self._capture.set_capture_enabled(False)
+        self._capture.release_all()
+        try:
+            channel.send({"version": PROTOCOL_VERSION, "kind": "control_switch", "owner": "client", "enter_edge": "left"})
+            self.on_log("[Mixput] Control transferred to the connected laptop.")
+        except (OSError, ProtocolError, ValueError) as error:
+            with self._lock:
+                self._control_owner = "host"
+            self._capture.set_capture_enabled(True)
+            self.on_log(f"[Mixput] Could not transfer control: {error}")
 
     def approve_pairing(self, request_id, approved):
         with self._lock:
@@ -67,15 +100,12 @@ class NetworkServer:
     def _send_input(self, event):
         with self._lock:
             channel = self._channel
-        if channel is None:
+            allowed = self._control_owner == "host"
+        if channel is None or not allowed:
             return
         try:
             if event.get("type") in EVENT_TYPES:
-                channel.send({
-                    "version": PROTOCOL_VERSION,
-                    "kind": "input",
-                    "event": event,
-                })
+                channel.send({"version": PROTOCOL_VERSION, "kind": "input", "event": event})
         except (OSError, ProtocolError, ValueError) as error:
             self.on_log(f"[Mixput] Could not transmit input: {error}")
 
@@ -168,9 +198,7 @@ class NetworkServer:
                     raise ProtocolError("Invalid pairing nonce.")
                 self.on_status("pairing")
                 approved = self._request_approval({
-                    "device_id": client_id,
-                    "name": name.strip(),
-                    "ip": address[0],
+                    "device_id": client_id, "name": name.strip(), "ip": address[0],
                 })
                 if not approved or not self.running:
                     send_control(connection, {"type": "pair_denied", "version": PAIRING_VERSION})
@@ -181,13 +209,10 @@ class NetworkServer:
                 nonce, ciphertext = encrypt_session_token(key, token)
                 self.pairings.authorize_client(client_id, name, address[0], token)
                 send_control(connection, {
-                    "type": "pair_accept",
-                    "version": PAIRING_VERSION,
+                    "type": "pair_accept", "version": PAIRING_VERSION,
                     "host_id": self.pairings.device_id,
                     "host_name": socket.gethostname()[:64],
-                    "public_key": public_text,
-                    "nonce": nonce,
-                    "ciphertext": ciphertext,
+                    "public_key": public_text, "nonce": nonce, "ciphertext": ciphertext,
                 })
                 channel = SecureChannel(connection, token)
 
@@ -195,17 +220,19 @@ class NetworkServer:
                 self._client_socket = connection
                 self._channel = channel
                 self._client_device_id = client_id
+                self._control_owner = "host"
             self.on_status("authenticating")
             hello = channel.receive()
             if not hello or hello.get("version") != PROTOCOL_VERSION or hello.get("kind") != "hello":
                 raise ProtocolError("Invalid peer handshake.")
             channel.send({"version": PROTOCOL_VERSION, "kind": "hello_ack"})
-            connection.settimeout(1.0)
+            connection.settimeout(0.5)
             self.on_status("connected")
             self.on_log(f"[Mixput] Authorized laptop connected: {address[0]}")
             if self._capture is None:
                 raise RuntimeError("Input backend is not configured.")
             self._capture.start_capture()
+            self._capture.set_capture_enabled(True)
             while self.running:
                 try:
                     message = channel.receive()
@@ -215,7 +242,20 @@ class NetworkServer:
                     break
                 if message.get("version") != PROTOCOL_VERSION:
                     raise ProtocolError("Unsupported peer protocol.")
-        except (OSError, ProtocolError, ValueError, KeyError) as error:
+                kind = message.get("kind")
+                if kind == "input" and self._control_owner == "client":
+                    event = message.get("event")
+                    if isinstance(event, dict) and event.get("type") in EVENT_TYPES:
+                        if not self._capture.apply_event(event):
+                            self.on_log("[Mixput] A remote input event could not be applied.")
+                elif kind == "control_switch" and message.get("owner") == "host":
+                    self._capture.release_all()
+                    with self._lock:
+                        self._control_owner = "host"
+                    self._capture.set_capture_enabled(True)
+                    self._capture.warp_to_edge("right")
+                    self.on_log("[Mixput] Control returned to this computer.")
+        except (OSError, ProtocolError, ValueError, KeyError, RuntimeError) as error:
             if self.running:
                 self.on_log(f"[Mixput] Peer session ended: {error}")
         finally:
@@ -232,6 +272,7 @@ class NetworkServer:
                     self._channel = None
                     self._client_socket = None
                     self._client_device_id = None
+                    self._control_owner = "host"
             if self.running:
                 self.on_status("listening")
                 self.on_log("[Mixput] Waiting for another laptop.")
@@ -246,6 +287,7 @@ class NetworkServer:
             self._channel = None
             self._client_socket = None
             self._client_device_id = None
+            self._control_owner = "host"
             pending = list(self._pending.values())
         for item in pending:
             item["approved"] = False

@@ -16,12 +16,20 @@ class RecordingInputBackend:
         self.stopped = threading.Event()
         self.events = []
         self.event_received = threading.Event()
+        self.capture_enabled = False
 
     def start_capture(self):
         self.started.set()
 
     def stop_capture(self):
         self.stopped.set()
+
+    def set_capture_enabled(self, enabled):
+        self.capture_enabled = bool(enabled)
+
+    def warp_to_edge(self, side):
+        self.warped_to = side
+        return True
 
     def apply_event(self, event):
         self.events.append(event)
@@ -106,6 +114,37 @@ class NetworkIntegrationTests(unittest.TestCase):
         self.server._send_input(event)
         self._wait(self.receiver_backend.event_received, "forwarded input event")
         self.assertEqual(self.receiver_backend.events, [event])
+
+    def test_edge_handoff_is_bidirectional_and_routes_remote_input(self):
+        self._start_server()
+        self.assertTrue(self.client.connect("127.0.0.1", self.port))
+        self._wait(self.client_connected, "initial pairing")
+        self._wait(self.server_connected, "host authentication")
+
+        self.server._on_local_edge("right")
+        deadline = time.monotonic() + 5
+        while not self.receiver_backend.capture_enabled and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertTrue(self.receiver_backend.capture_enabled)
+        self.assertFalse(self.host_backend.capture_enabled)
+
+        self.client._on_local_edge("left")
+        deadline = time.monotonic() + 5
+        while not self.host_backend.capture_enabled and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertTrue(self.host_backend.capture_enabled)
+        self.assertFalse(self.receiver_backend.capture_enabled)
+
+        self.server._on_local_edge("right")
+        deadline = time.monotonic() + 5
+        while not self.receiver_backend.capture_enabled and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertTrue(self.receiver_backend.capture_enabled)
+
+        event = {"type": "key_down", "key": "a"}
+        self.client._send_input(event)
+        self._wait(self.host_backend.event_received, "reverse input forwarding")
+        self.assertEqual(self.host_backend.events, [event])
 
     def test_revoked_device_must_request_approval_again(self):
         self._start_server()
