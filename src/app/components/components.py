@@ -184,7 +184,6 @@ class App(tk.Canvas):
             "Choose which laptop shares its keyboard and mouse, or connect as the receiver.",
         )
         self.connection_panel = create_mixput_frame(connection)
-        self.connection_panel.pack(fill=tk.BOTH, expand=True)
 
         devices = self._page("devices")
         self._heading(
