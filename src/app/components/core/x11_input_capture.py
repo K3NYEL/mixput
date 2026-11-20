@@ -71,6 +71,7 @@ class X11GrabController:
                             root.ungrab_keyboard(X.CurrentTime)
                         grabbed_pointer = grabbed_keyboard = False
                     display.sync()
+                    self._active = grabbed_pointer and grabbed_keyboard
                 elif not desired and (grabbed_pointer or grabbed_keyboard):
                     if grabbed_pointer:
                         root.ungrab_pointer(X.CurrentTime)
@@ -79,7 +80,6 @@ class X11GrabController:
                     grabbed_pointer = grabbed_keyboard = False
                     display.sync()
                     self._active = grabbed_pointer and grabbed_keyboard
-                    self._applied.set()
 
                 if self._active == desired:
                     self._applied.set()
