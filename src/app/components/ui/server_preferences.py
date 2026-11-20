@@ -179,6 +179,12 @@ class ServerPreferences(tk.Frame):
             return
         names = [str(item.get("name", "Device")) for item in sorted(devices, key=lambda d: d.get("index", 0))]
         self.devices_label.configure(text="Connected desktops: " + "  →  ".join(names))
+        assigned_ip = state.get("virtual_ip")
+        if assigned_ip:
+            self.virtual_ip = str(assigned_ip)
+            virtual_label = self.network_value_labels.get("Mixput virtual IP")
+            if virtual_label is not None:
+                virtual_label.configure(text=self.virtual_ip)
         self.on_state_changed({
             "devices": devices, "owner": state.get("owner", "host"),
             "server_status": self._server_status, "client_status": self._client_status,
@@ -263,10 +269,15 @@ class ServerPreferences(tk.Frame):
             self.server.revoke_device(device["id"])
             self._refresh_authorized_devices()
 
+    def _current_virtual_ip(self):
+        if self._server_status in ("listening", "connected", "pairing", "authenticating"):
+            return self.server.virtual_network.host_ip
+        return self.client.virtual_ip or self.server.virtual_network.host_ip
+
     def refresh_network_info(self):
         interface, local_ip, subnet_mask, dns_servers = get_network_details()
         self.local_ip = local_ip
-        self.virtual_ip = self.server.virtual_network.host_ip
+        self.virtual_ip = self._current_virtual_ip()
         values = {
             "Mixput virtual IP": self.virtual_ip,
             "Transport IP address": local_ip,
@@ -391,6 +402,10 @@ class ServerPreferences(tk.Frame):
         }
         server = server_labels.get(self._server_status, self._server_status.title())
         self.status_label.configure(text=f"Mixput server: {server}")
+        self.virtual_ip = self._current_virtual_ip()
+        virtual_label = self.network_value_labels.get("Mixput virtual IP")
+        if virtual_label is not None:
+            virtual_label.configure(text=self.virtual_ip)
         devices = self.server.connected_devices if self.server.running else (
             self.client._devices if self._client_status == "connected" else [])
         owner = self.server._control_owner if self.server.running else self.client._control_owner

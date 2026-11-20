@@ -141,6 +141,13 @@ class NetworkClient:
         devices, owner = message.get("devices"), message.get("owner")
         if not isinstance(devices, list) or not 2 <= len(devices) <= 4 or not isinstance(owner, str):
             raise ProtocolError("Invalid server topology.")
+        network_cidr = message.get("virtual_network")
+        try:
+            virtual_network = ipaddress.ip_network(network_cidr, strict=True)
+        except (TypeError, ValueError) as error:
+            raise ProtocolError("The server provided an invalid Mixput virtual network.") from error
+        if virtual_network.version != 4 or not virtual_network.is_private:
+            raise ProtocolError("The Mixput virtual network must use a private IPv4 range.")
         virtual_addresses = []
         for device in devices:
             if not isinstance(device, dict):
@@ -149,7 +156,8 @@ class NetworkClient:
                 virtual_address = ipaddress.ip_address(device.get("virtual_ip", ""))
             except ValueError as error:
                 raise ProtocolError("The server provided an invalid Mixput virtual IP.") from error
-            if virtual_address.version != 4 or virtual_address not in ipaddress.ip_network("10.77.0.0/16"):
+            if (virtual_address.version != 4 or virtual_address not in virtual_network
+                    or virtual_address in (virtual_network.network_address, virtual_network.broadcast_address)):
                 raise ProtocolError("The server provided an out-of-range Mixput virtual IP.")
             virtual_addresses.append(str(virtual_address))
         if len(set(virtual_addresses)) != len(virtual_addresses):
@@ -162,7 +170,7 @@ class NetworkClient:
             self._devices = devices
             self._index = int(own.get("index", 1))
             self._virtual_ip = str(own["virtual_ip"])
-            self._virtual_network = "10.77.0.0/16"
+            self._virtual_network = str(virtual_network)
             self._control_owner = owner
             active = owner == self._device_id
         if self.input_backend:

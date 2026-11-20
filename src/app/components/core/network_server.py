@@ -105,7 +105,8 @@ class NetworkServer:
                 owner = self._control_owner
         try:
             peer["channel"].send({"version": PROTOCOL_VERSION, "kind": "session_state",
-                                  "devices": devices, "owner": owner, "enter_edge": enter_edge})
+                                  "devices": devices, "owner": owner, "enter_edge": enter_edge,
+                                  "virtual_network": self.virtual_network.network_cidr})
         except (OSError, ProtocolError, ValueError):
             pass
 
@@ -279,6 +280,8 @@ class NetworkServer:
             client_id = control.get("device_id")
             if control.get("version") != PAIRING_VERSION or not isinstance(client_id, str) or len(client_id) != 32:
                 raise ProtocolError("Invalid device identity or pairing protocol.")
+            if client_id == self.pairings.device_id:
+                raise ProtocolError("This device is already the Mixput server identity.")
             if control.get("type") == "resume":
                 record = self.pairings.get_authorized_client(client_id) if control.get("host_id") == self.pairings.device_id else None
                 if record:
