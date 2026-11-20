@@ -31,14 +31,14 @@ class SecureChannel:
             payload = json.dumps(envelope, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
             if len(payload) > MAX_MESSAGE_BYTES:
                 raise ProtocolError("Message exceeds the protocol size limit.")
-            encrypted = self._cipher.encrypt(payload) + b"\\n"
+            encrypted = self._cipher.encrypt(payload) + b"\n"
             self._socket.sendall(encrypted)
             self._send_sequence += 1
         return True
 
     def receive(self):
         while not self._closed:
-            marker = self._buffer.find(b"\\n")
+            marker = self._buffer.find(b"\n")
             if marker >= 0:
                 line = bytes(self._buffer[:marker])
                 del self._buffer[:marker + 1]
