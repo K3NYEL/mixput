@@ -31,10 +31,10 @@ def create_system_preferences(self):
     self.sep.pack(fill=tk.BOTH, side=tk.LEFT, padx=5, pady=5)
 
     labels = (
-        ("ip_label", "IP:"),
-        ("iface_label", "Interface:"),
-        ("device_label", "Device Name:"),
-        ("system_arch_label", "System Architecture:"),
+        ("ip_label", "Network IP:"),
+        ("iface_label", "Network interface:"),
+        ("device_label", "This laptop:"),
+        ("system_arch_label", "Platform / architecture:"),
     )
 
     for attribute, label_text in labels:
