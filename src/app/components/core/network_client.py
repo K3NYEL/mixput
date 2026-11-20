@@ -64,6 +64,8 @@ class NetworkClient:
                 self.on_message(f"[Mixput] Connection failed: {error}")
         finally:
             self.running = False
+            if self.input_backend is not None:
+                self.input_backend.release_all()
             if channel:
                 channel.close()
             elif self.sock:
