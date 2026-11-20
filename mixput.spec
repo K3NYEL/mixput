@@ -5,6 +5,13 @@ from pathlib import Path
 
 ROOT = Path(SPECPATH)
 
+if sys.platform == "win32":
+    INPUT_HIDDENIMPORTS = ["pynput.keyboard._win32", "pynput.mouse._win32"]
+elif sys.platform.startswith("linux"):
+    INPUT_HIDDENIMPORTS = ["pynput.keyboard._xorg", "pynput.mouse._xorg"]
+else:
+    INPUT_HIDDENIMPORTS = []
+
 a = Analysis(
     [str(ROOT / "src" / "main.py")],
     pathex=[str(ROOT), str(ROOT / "src")],
@@ -15,7 +22,7 @@ a = Analysis(
         (str(ROOT / "public" / "assets" / "mixput.png"), "public/assets"),
         (str(ROOT / "public" / "assets" / "drawing-1.svg"), "public/assets"),
     ],
-    hiddenimports=[],
+    hiddenimports=INPUT_HIDDENIMPORTS,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

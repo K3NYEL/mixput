@@ -31,10 +31,10 @@ def create_system_preferences(self):
     self.sep.pack(fill=tk.BOTH, side=tk.LEFT, padx=5, pady=5)
 
     labels = (
-        ("ip_label", "IP:"),
-        ("iface_label", "Interface:"),
-        ("device_label", "Device Name:"),
-        ("system_arch_label", "System Architecture:"),
+        ("ip_label", "Network IP:"),
+        ("iface_label", "Network interface:"),
+        ("device_label", "This laptop:"),
+        ("system_arch_label", "Platform / architecture:"),
     )
 
     for attribute, label_text in labels:
@@ -74,3 +74,31 @@ def create_system_preferences(self):
         )
         label.pack(side=tk.TOP, anchor=tk.W, padx=5, pady=5)
         setattr(self, attribute, label)
+
+    return self.system_preferences_container
+
+
+def apply_system_theme(app, colors):
+    """Apply the active palette to the complete device-information panel."""
+    root = getattr(app, "system_preferences_container", None)
+    if root is None:
+        return
+
+    def visit(widget):
+        try:
+            if isinstance(widget, tk.Frame):
+                widget.configure(bg=colors["bg_secondary"])
+            elif isinstance(widget, tk.Label):
+                widget.configure(bg=colors["bg_secondary"])
+                if widget in (app.ip_show, app.iface_show, app.device_show, app.system_arch_show):
+                    widget.configure(fg=colors["text_secondary"])
+                else:
+                    widget.configure(fg=colors["text_primary"])
+            for child in widget.winfo_children():
+                visit(child)
+        except tk.TclError:
+            return
+
+    root.configure(bg=colors["bg_secondary"], highlightbackground=colors["border"])
+    app.sep.configure(bg=colors["border"])
+    visit(root)
