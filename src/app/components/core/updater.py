@@ -113,7 +113,7 @@ try {
  $p=[Security.Principal.WindowsPrincipal]::new($id)
  if (-not $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
   Log 'Requesting administrator permission (UAC).'
-  $a=@('-NoProfile','-ExecutionPolicy','Bypass','-File',$PSCommandPath,'-AppDir',$AppDir,'-SourceDir',$SourceDir,'-ExePath',$ExePath,'-ProcessId',$ProcessId,'-StageDir',$StageDir,'-LogPath',$LogPath)
+  $a='-NoProfile -ExecutionPolicy Bypass -File "'+$PSCommandPath+'" -AppDir "'+$AppDir+'" -SourceDir "'+$SourceDir+'" -ExePath "'+$ExePath+'" -ProcessId '+$ProcessId+' -StageDir "'+$StageDir+'" -LogPath "'+$LogPath+'"'
   Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList $a
   exit 0
  }
@@ -185,3 +185,29 @@ def apply_update_and_restart(extracted_dir, progress_callback=None):
     else: raise RuntimeError("Automatic updates are not supported on this OS.")
     _report(progress_callback,"restart",1,1,"Updater started. Mixput will close and reopen.")
     sys.exit(0)
+
+
+def get_update_log_path() -> Path:
+    if platform.system().lower() == "windows":
+        return Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Mixput" / "logs" / "update.log"
+    state = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+    return state / "mixput" / "logs" / "update.log"
+
+
+def consume_update_diagnostics() -> str | None:
+    """Return a failed update since the last successful app startup, then mark startup."""
+    log_path = get_update_log_path()
+    if not log_path.is_file():
+        return None
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        last_error = max((i for i, line in enumerate(lines) if "ERROR" in line.upper()), default=-1)
+        last_start = max((i for i, line in enumerate(lines) if "APPLICATION STARTED" in line), default=-1)
+        details = None
+        if last_error > last_start:
+            details = "\\n".join(lines[max(0, last_error - 2): min(len(lines), last_error + 8)])
+        with log_path.open("a", encoding="utf-8") as stream:
+            stream.write(f"\\n[{__import__('datetime').datetime.now().isoformat(timespec='seconds')}] APPLICATION STARTED\\n")
+        return details
+    except OSError:
+        return None
