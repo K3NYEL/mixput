@@ -253,7 +253,11 @@ class ServerPreferences(tk.Frame):
         self.authorized_list.delete(0, tk.END)
         self._authorized_devices = self.server.pairings.list_authorized_clients()
         for device in self._authorized_devices:
-            self.authorized_list.insert(tk.END, f'{device.get("name", "Device")}  ·  {device.get("address", "")}')
+            virtual_ip = device.get("virtual_ip", "Not assigned")
+            self.authorized_list.insert(
+                tk.END,
+                f'{device.get("name", "Device")}  ·  Mixput {virtual_ip}  ·  {device.get("address", "")}'
+            )
 
     def revoke_selected_device(self):
         selected = self.authorized_list.curselection()
