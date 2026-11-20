@@ -5,7 +5,7 @@ from tkinter import messagebox
 from tkinter_icons import LucideIcon
 
 from app.components import theme
-from .ui.system_frame import create_system_preferences
+from .ui.system_frame import create_system_preferences, apply_system_theme
 from .ui.mixput_frame import create_mixput_frame
 from .core.updater import (
     obtain_version,
@@ -260,7 +260,7 @@ class App(tk.Canvas):
 
         self.system_preferences_label = tk.Label(
             self.header_frame,
-            text="System Preferences",
+            text="Device & Network",
             font=("Arial", 14),
             bg=theme.CURRENT_THEME["bg_secondary"],
             fg=theme.CURRENT_THEME["text_primary"],
@@ -271,7 +271,7 @@ class App(tk.Canvas):
 
         self.mixput_preferences_label = tk.Label(
             self.main_content,
-            text="Mixput Preferences",
+            text="Keyboard & Mouse Sharing",
             font=("Arial", 14),
             bg=theme.CURRENT_THEME["bg_secondary"],
             fg=theme.CURRENT_THEME["text_primary"],
