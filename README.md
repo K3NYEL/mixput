@@ -11,7 +11,8 @@ The host occupies position 1 (leftmost). Remote devices are placed in connection
 - The host's right edge enters the first remote device.
 - A remote device's left edge moves to its previous neighbor; its right edge moves to its next neighbor.
 - The first and last devices have only one neighboring device.
-- Keyboard, mouse movement, buttons, and wheel events follow the device that currently owns control.
+- The host is the only physical keyboard and mouse source. Its events are routed to the active desktop; each receiver applies them locally to its own desktop.
+- Keyboard, mouse movement, buttons, and wheel events follow the active desktop.
 - Mixput releases held keys and mouse buttons during a handoff or disconnect to reduce stuck-input issues.
 
 All devices must run a compatible Mixput protocol version and remain connected during a handoff. The server enforces the four-device limit, counting the host.
@@ -23,7 +24,7 @@ All devices must run a compatible Mixput protocol version and remain connected d
 3. On each other computer, find the host under **Devices** or enter its LAN IPv4 address, then choose **Request access**.
 4. Approve each new device on the host when prompted. The server rejects additional devices once four computers are connected.
 5. Use the left and right screen edges to move between neighboring computers.
-6. Use the group chat in Connection to send messages to everyone in the session.
+6. Open **Chat** in the main navigation to message every device in the session.
 
 The host sends UDP discovery announcements on port 45821. The authenticated input session uses the configured TCP port (default 8080). Allow both ports through the relevant firewalls on a trusted private network.
 
@@ -31,7 +32,7 @@ The host sends UDP discovery announcements on port 45821. The authenticated inpu
 
 New devices must be explicitly approved on the host. Pairing uses ephemeral X25519 key agreement and HKDF to derive a wrapping key; the generated Fernet session key is transferred inside an AES-GCM authenticated-encryption message. Input sessions use authenticated encrypted transport. Approved device credentials are stored in the user's Mixput configuration directory with restrictive file permissions on Linux. The host can revoke saved device authorization.
 
-Input events are accepted only from authenticated connected devices and only from the device that currently owns control. Group chat messages are relayed only among authenticated session members over their encrypted channels. Do not expose Mixput's TCP port to the public internet. Use it only on a trusted local network and approve devices you recognize.
+Only the host captures physical keyboard and mouse input. The server routes those events to the active desktop, and each authenticated receiver applies them locally. Receiver devices do not send their own physical input back to the host. Group chat messages are relayed only among authenticated session members over their encrypted channels. Do not expose Mixput's TCP port to the public internet. Use it only on a trusted local network and approve devices you recognize.
 
 ## Platform notes
 
