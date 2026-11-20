@@ -5,14 +5,12 @@ from PIL import Image, ImageTk
 
 from app.components import theme, App
 
-
 class MainWindows(tk.Tk):
     def __init__(self):
         super().__init__()
         self.create_widgets()
         self.title("Mixput")
-        self.windows_center(700, 500)
-        self.resizable(False, False)
+        self.state("normal")
         self.theme = theme
         self.DARK_THEME = False
         self.CURRENT_THEME = self.theme.LIGHT_THEME
@@ -30,17 +28,10 @@ class MainWindows(tk.Tk):
                 self._icon_photo = ImageTk.PhotoImage(img.copy())
                 self.iconphoto(True, self._icon_photo)
 
-    def windows_center(self, width, height):
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-        x = (screen_width - width) // 2
-        y = (screen_height - height) // 2
-        self.geometry(f"{width}x{height}+{x}+{y}")
 
     def create_widgets(self):
         self.app = App()
         self.app.pack(fill=tk.BOTH, expand=True)
-
 
 if __name__ == "__main__":
     app = MainWindows()
