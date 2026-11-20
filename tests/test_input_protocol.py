@@ -3,6 +3,7 @@ import unittest
 from app.components.core.input_protocol import (
     EVENT_TYPES,
     MAX_MESSAGE_BYTES,
+    PROTOCOL_VERSION,
     ProtocolError,
     decode_message,
     encode_input_event,
@@ -12,7 +13,7 @@ from app.components.core.input_protocol import (
 
 class InputProtocolTests(unittest.TestCase):
     def test_message_round_trip(self):
-        message = {"version": 1, "kind": "hello"}
+        message = {"version": PROTOCOL_VERSION, "kind": "hello"}
         self.assertEqual(decode_message(encode_message(message).rstrip(b"\n")), message)
 
     def test_rejects_unsupported_input_event(self):
