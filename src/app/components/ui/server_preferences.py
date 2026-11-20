@@ -166,7 +166,7 @@ class ServerPreferences(tk.Frame):
         self.host_key.configure(state=tk.NORMAL)
         self.host_key.delete(0, tk.END)
         self.host_key.insert(0, key)
-        self.host_key.configure(state=tk.READONLY)
+        self.host_key.configure(state="readonly")
 
     def copy_pairing_key(self):
         key = self.host_key.get().strip()
