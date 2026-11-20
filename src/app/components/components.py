@@ -5,7 +5,7 @@ from tkinter import messagebox
 from tkinter_icons import LucideIcon
 
 from app.components import theme
-from .ui.system_frame import create_system_preferences, apply_system_theme, apply_system_theme
+from .ui.system_frame import create_system_preferences, apply_system_theme
 from .ui.mixput_frame import create_mixput_frame
 from .core.updater import (
     obtain_version,
