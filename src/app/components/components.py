@@ -26,6 +26,7 @@ class App(tk.Canvas):
 
     NAV_ITEMS = (
         ("home", "Home"),
+        ("server", "Server"),
         ("server_logs", "Server Logs"),
         ("chat", "Chat"),
         ("devices", "Devices"),
@@ -51,8 +52,7 @@ class App(tk.Canvas):
         panel = self.connection_panel.server_preferences
         panel.on_sharing_changed = self._set_discovery_sharing
         self.discovery.start()
-        # Every Mixput instance advertises its server automatically at startup.
-        panel.start_server()
+        # Discovery starts automatically; hosting is controlled from the Server page.
         self.show_page("home")
         self.after(1500, self.check_for_updates)
         self.after(1800, self._show_update_diagnostics)
@@ -200,55 +200,18 @@ class App(tk.Canvas):
                                      relief=tk.FLAT, bg=c["bg_main"], fg=c["text_secondary"],
                                      font=("Consolas", 8), padx=9, pady=7)
         self.home_activity.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
-        nearby = tk.Frame(home, bg=c["bg_main"])
-        nearby.pack(fill=tk.BOTH, expand=True, pady=(12, 10))
-        tk.Label(
-            nearby, text="Nearby Mixput devices", font=("Arial", 14, "bold"),
-            bg=c["bg_main"], fg=c["text_primary"],
-        ).pack(anchor=tk.W, pady=(0, 4))
-        self.discovery_status = tk.Label(
-            nearby, text="Searching this local network…",
-            font=("Arial", 9), bg=c["bg_main"], fg=c["text_secondary"],
+        server = self._page("server")
+        self._heading(
+            server, "Server",
+            "Configure this laptop's Mixput server and control when it is available on your network.",
         )
-        self.discovery_status.pack(anchor=tk.W, pady=(0, 8))
-        list_frame = tk.Frame(
-            nearby, bg=c["bg_secondary"],
-            highlightbackground=c["border"], highlightthickness=1,
-        )
-        list_frame.pack(fill=tk.BOTH, expand=True)
-        self.devices_list = tk.Listbox(
-            list_frame, height=6, relief=tk.FLAT, borderwidth=0,
-            bg=c["bg_secondary"], fg=c["text_primary"],
-            selectbackground=c["border"], selectforeground=c["text_primary"],
-            activestyle="none", font=("Arial", 10),
-        )
-        self.devices_list.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
-        self.devices_list.bind("<<ListboxSelect>>", self._select_discovered_device)
-        actions = tk.Frame(nearby, bg=c["bg_main"])
-        actions.pack(fill=tk.X, pady=(8, 0))
-        self.use_device_button = tk.Button(
-            actions, text="Connect to selected device",
-            command=self._use_selected_device, state=tk.DISABLED,
-            relief=tk.FLAT, cursor="hand2", padx=14, pady=8,
-            bg=c["border"], fg=c["text_primary"],
-            activebackground=c["border"], activeforeground=c["text_primary"],
-        )
-        self.use_device_button.pack(side=tk.LEFT)
-        tk.Label(
-            actions, text="Devices must be on the same local network.",
-            font=("Arial", 8), bg=c["bg_main"], fg=c["text_secondary"],
-        ).pack(side=tk.LEFT, padx=10)
-
-        # Networking services live outside the navigation; users do not start
-        # a server manually or connect from a separate Connection page.
-        self.services_host = tk.Frame(self)
-        self.connection_panel = create_mixput_frame(self.services_host)
+        self.connection_panel = create_mixput_frame(server)
         panel = self.connection_panel.server_preferences
         panel.on_state_changed = self._queue_dashboard_state
         panel.on_activity = self._queue_server_log
         panel.on_chat_message = self._queue_chat_message
         self._queue_dashboard_state({"devices": panel.server.connected_devices, "owner": "host",
-                                     "server_status": "starting", "client_status": "disconnected",
+                                     "server_status": "stopped", "client_status": "disconnected",
                                      "port": 8080, "local_ip": panel.local_ip})
 
         server_logs = self._page("server_logs")
@@ -312,6 +275,45 @@ class App(tk.Canvas):
                 row, text=value, font=("Arial", 11, "bold"),
                 bg=c["bg_secondary"], fg=c["text_primary"],
             ).pack(anchor=tk.W, padx=13, pady=(0, 9))
+
+        discovered = tk.Frame(devices, bg=c["bg_main"])
+        discovered.pack(fill=tk.BOTH, expand=True, pady=(16, 0))
+        tk.Label(
+            discovered, text="Mixput devices on this network",
+            font=("Arial", 14, "bold"), bg=c["bg_main"], fg=c["text_primary"],
+        ).pack(anchor=tk.W, pady=(0, 4))
+        self.discovery_status = tk.Label(
+            discovered, text="Searching the local network…",
+            font=("Arial", 9), bg=c["bg_main"], fg=c["text_secondary"],
+        )
+        self.discovery_status.pack(anchor=tk.W, pady=(0, 8))
+        list_frame = tk.Frame(
+            discovered, bg=c["bg_secondary"],
+            highlightbackground=c["border"], highlightthickness=1,
+        )
+        list_frame.pack(fill=tk.BOTH, expand=True)
+        self.devices_list = tk.Listbox(
+            list_frame, height=8, relief=tk.FLAT, borderwidth=0,
+            bg=c["bg_secondary"], fg=c["text_primary"],
+            selectbackground=c["border"], selectforeground=c["text_primary"],
+            activestyle="none", font=("Arial", 10),
+        )
+        self.devices_list.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self.devices_list.bind("<<ListboxSelect>>", self._select_discovered_device)
+        actions = tk.Frame(discovered, bg=c["bg_main"])
+        actions.pack(fill=tk.X, pady=(8, 0))
+        self.use_device_button = tk.Button(
+            actions, text="Connect to selected device",
+            command=self._use_selected_device, state=tk.DISABLED,
+            relief=tk.FLAT, cursor="hand2", padx=14, pady=8,
+            bg=c["border"], fg=c["text_primary"],
+            activebackground=c["border"], activeforeground=c["text_primary"],
+        )
+        self.use_device_button.pack(side=tk.LEFT)
+        tk.Label(
+            actions, text="Only devices advertising an active Mixput server can be connected.",
+            font=("Arial", 8), bg=c["bg_main"], fg=c["text_secondary"],
+        ).pack(side=tk.LEFT, padx=10)
 
         settings = self._page("settings")
         self._heading(
