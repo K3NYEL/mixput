@@ -15,6 +15,7 @@ from .core.updater import (
 )
 
 
+
 class App(tk.Canvas):
     def __init__(self):
         super().__init__()
@@ -298,6 +299,7 @@ class App(tk.Canvas):
 
     def theme_apply(self):
         t = self.CURRENT_THEME
+        theme.CURRENT_THEME = t
 
         self.config(bg=t["bg_main"])
         self.canvas.config(bg=t["bg_main"])
