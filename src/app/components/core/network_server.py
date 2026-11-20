@@ -15,11 +15,11 @@ from app.components.core.secure_transport import SecureChannel
 
 
 class NetworkServer:
-    def __init__(self, on_log=None, on_status=None, on_pairing_request=None):
+    def __init__(self, on_log=None, on_status=None, on_pairing_request=None, pairing_store=None):
         self.on_log = on_log or (lambda message: None)
         self.on_status = on_status or (lambda status: None)
         self.on_pairing_request = on_pairing_request or (lambda request: None)
-        self.pairings = PairingStore()
+        self.pairings = pairing_store or PairingStore()
         self.running = False
         self._server_socket = None
         self._client_socket = None
@@ -28,6 +28,7 @@ class NetworkServer:
         self._lock = threading.RLock()
         self._capture = None
         self._pending = {}
+        self._client_device_id = None
 
     def start(self, host="0.0.0.0", port=8080):
         with self._lock:
@@ -55,6 +56,11 @@ class NetworkServer:
     def revoke_device(self, device_id):
         revoked = self.pairings.revoke_client(device_id)
         if revoked:
+            with self._lock:
+                active = self._client_device_id == device_id
+                channel = self._channel if active else None
+            if channel:
+                channel.close()
             self.on_log("[Mixput] Device authorization revoked.")
         return revoked
 
@@ -134,6 +140,9 @@ class NetworkServer:
                 raise ProtocolError("Invalid device identity or pairing protocol.")
 
             if control.get("type") == "resume":
+                if control.get("host_id") != self.pairings.device_id:
+                    send_control(connection, {"type": "pair_required", "version": PAIRING_VERSION})
+                    control = receive_control(connection)
                 record = self.pairings.get_authorized_client(client_id)
                 if record is None:
                     send_control(connection, {"type": "pair_required", "version": PAIRING_VERSION})
@@ -158,6 +167,7 @@ class NetworkServer:
                     raise ProtocolError("Invalid pairing nonce.") from error
                 if len(salt) != 32:
                     raise ProtocolError("Invalid pairing nonce.")
+                self.on_status("pairing")
                 approved = self._request_approval({
                     "device_id": client_id,
                     "name": name.strip(),
@@ -185,6 +195,7 @@ class NetworkServer:
             with self._lock:
                 self._client_socket = connection
                 self._channel = channel
+                self._client_device_id = client_id
             self.on_status("authenticating")
             hello = channel.receive()
             if not hello or hello.get("version") != PROTOCOL_VERSION or hello.get("kind") != "hello":
@@ -221,6 +232,7 @@ class NetworkServer:
                 if self._channel is channel:
                     self._channel = None
                     self._client_socket = None
+                    self._client_device_id = None
             if self.running:
                 self.on_status("listening")
                 self.on_log("[Mixput] Waiting for another laptop.")
@@ -234,6 +246,7 @@ class NetworkServer:
             channel = self._channel
             self._channel = None
             self._client_socket = None
+            self._client_device_id = None
             pending = list(self._pending.values())
         for item in pending:
             item["approved"] = False

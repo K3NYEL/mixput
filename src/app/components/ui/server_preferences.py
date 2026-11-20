@@ -184,7 +184,7 @@ class ServerPreferences(tk.Frame):
         self.server.approve_pairing(request["request_id"], approved)
         if approved:
             self._queue_log(f'[Mixput] Authorized {request["name"]} ({request["ip"]}).')
-            self._refresh_authorized_devices()
+            self.after(500, self._refresh_authorized_devices)
         else:
             self._queue_log(f'[Mixput] Rejected pairing request from {request["name"]}.')
 
@@ -290,7 +290,7 @@ class ServerPreferences(tk.Frame):
 
     def _apply_server_status(self, status):
         self._server_status = status
-        active = status in ("listening", "authenticating", "connected")
+        active = status in ("listening", "pairing", "authenticating", "connected")
         self.on_sharing_changed(active, self._active_port)
         self.start_button.configure(state=tk.DISABLED if active else tk.NORMAL)
         self.stop_button.configure(state=tk.NORMAL if active else tk.DISABLED)
@@ -313,6 +313,7 @@ class ServerPreferences(tk.Frame):
         server_labels = {
             "stopped": "Stopped",
             "listening": "Sharing",
+            "pairing": "Pairing request",
             "authenticating": "Approving device",
             "connected": "Sharing active",
             "error": "Sharing error",
