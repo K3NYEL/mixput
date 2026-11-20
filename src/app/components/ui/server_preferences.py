@@ -4,7 +4,7 @@ from tkinter import messagebox
 
 from app.components import theme
 from app.components.core.input_backend import InputBackend
-from app.components.core.network import get_active_network_info, get_network_details
+from app.components.core.network import get_network_details
 from app.components.core.network_client import NetworkClient
 from app.components.core.network_server import NetworkServer
 
@@ -69,7 +69,7 @@ class ServerPreferences(tk.Frame):
         network_frame = tk.Frame(host_frame, bg=c["bg_secondary"])
         network_frame.pack(fill=tk.X, pady=(2, 10))
         self.network_value_labels = {}
-        for label in ("IP address", "Subnet mask", "DNS servers", "Network interface"):
+        for label in ("Mixput virtual IP", "Transport IP address", "Subnet mask", "DNS servers", "Network interface"):
             row = tk.Frame(network_frame, bg=c["bg_secondary"])
             row.pack(fill=tk.X, pady=2)
             tk.Label(
@@ -85,7 +85,8 @@ class ServerPreferences(tk.Frame):
             value.pack(side=tk.LEFT, fill=tk.X, expand=True)
             self.network_value_labels[label] = value
         self.local_ip = "0.0.0.0"
-        self.local_ip_label = self.network_value_labels["IP address"]
+        self.virtual_ip = self.server.virtual_network.host_ip
+        self.local_ip_label = self.network_value_labels["Transport IP address"]
         self.refresh_network_button = self._button(
             host_frame, "Refresh network information", self.refresh_network_info
         )
@@ -182,6 +183,7 @@ class ServerPreferences(tk.Frame):
             "devices": devices, "owner": state.get("owner", "host"),
             "server_status": self._server_status, "client_status": self._client_status,
             "port": self._active_port, "local_ip": self.local_ip,
+            "virtual_ip": state.get("virtual_ip", self.virtual_ip),
         })
 
     def send_chat_message(self, text):
@@ -264,8 +266,10 @@ class ServerPreferences(tk.Frame):
     def refresh_network_info(self):
         interface, local_ip, subnet_mask, dns_servers = get_network_details()
         self.local_ip = local_ip
+        self.virtual_ip = self.server.virtual_network.host_ip
         values = {
-            "IP address": local_ip,
+            "Mixput virtual IP": self.virtual_ip,
+            "Transport IP address": local_ip,
             "Subnet mask": subnet_mask,
             "DNS servers": dns_servers,
             "Network interface": interface,
@@ -394,6 +398,7 @@ class ServerPreferences(tk.Frame):
             "devices": devices, "owner": owner,
             "server_status": self._server_status, "client_status": self._client_status,
             "port": self._active_port, "local_ip": self.local_ip,
+            "virtual_ip": self.client.virtual_ip if self._client_status == "connected" else self.virtual_ip,
         })
 
     def apply_theme(self, colors):

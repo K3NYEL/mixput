@@ -11,6 +11,7 @@ from app.components.core.pairing_handshake import (
 )
 from app.components.core.pairing_store import PairingStore
 from app.components.core.secure_transport import SecureChannel
+from app.components.core.virtual_network import VirtualNetworkManager
 
 MAX_DEVICES = 4
 MAX_CHAT_LENGTH = 1000
@@ -25,6 +26,7 @@ class NetworkServer:
         self.on_chat = on_chat or (lambda message: None)
         self.on_devices = on_devices or (lambda devices: None)
         self.pairings = pairing_store or PairingStore()
+        self.virtual_network = VirtualNetworkManager(self.pairings.device_id)
         self.running = False
         self._server_socket = None
         self._thread = None
@@ -42,8 +44,11 @@ class NetworkServer:
             return self._device_snapshot_locked()
 
     def _device_snapshot_locked(self):
-        return [{"id": "host", "name": self._host_name, "index": 0, "host": True}] + [
-            {"id": p["id"], "name": p["name"], "index": p["index"], "host": False}
+        return [{"id": "host", "device_id": self.pairings.device_id,
+                 "name": self._host_name, "index": 0, "host": True,
+                 "virtual_ip": self.virtual_network.host_ip}] + [
+            {"id": p["id"], "device_id": p["id"], "name": p["name"],
+             "index": p["index"], "host": False, "virtual_ip": p["virtual_ip"]}
             for p in sorted(self._peers.values(), key=lambda item: item["index"])
         ]
 
@@ -323,7 +328,9 @@ class NetworkServer:
             with self._lock:
                 index = len(self._peers) + 1
                 peer = {"id": client_id, "name": (name.strip() if 'name' in locals() else self.pairings.get_authorized_client(client_id)["name"]),
-                        "channel": channel, "socket": connection, "index": index, "address": address[0]}
+                        "channel": channel, "socket": connection, "index": index,
+                        "address": address[0],
+                        "virtual_ip": self.virtual_network.address_for(client_id)}
                 self._peers[client_id] = peer
                 owner = self._control_owner
                 devices = self._device_snapshot_locked()
@@ -429,7 +436,9 @@ class NetworkServer:
             self._capture.set_relative_mode(False)
             self._capture.stop_capture()
             self._capture.release_all()
-        self.on_devices([{"id": "host", "name": self._host_name, "index": 0, "host": True}])
+        with self._lock:
+            host_devices = self._device_snapshot_locked()
+        self.on_devices(host_devices)
 
     def stop(self):
         with self._lock:
