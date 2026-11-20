@@ -1,5 +1,6 @@
 """Authenticated encrypted TCP channel with per-direction sequence numbers."""
 import json
+import socket
 import threading
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -37,7 +38,7 @@ class SecureChannel:
 
     def receive(self):
         while not self._closed:
-            marker = self._buffer.find(b"\n")
+            marker = self._buffer.find(b"\\n")
             if marker >= 0:
                 line = bytes(self._buffer[:marker])
                 del self._buffer[:marker + 1]
