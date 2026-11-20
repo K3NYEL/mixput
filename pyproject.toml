@@ -2,7 +2,7 @@
 [project]
 name = "mixput"
 version = "0.1.3"
-description = "Cross-platform desktop utility for managing input devices."
+description = "Cross-platform keyboard and mouse sharing between laptops."
 readme = "README.md"
 authors = [
     { name = "K3NYEL", email = "monterokenyelalexandel@gmail.com" }
