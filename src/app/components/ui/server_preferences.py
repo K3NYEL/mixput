@@ -85,7 +85,7 @@ class ServerPreferences(tk.Frame):
         key_row = tk.Frame(host_frame, bg=c["bg_secondary"])
         key_row.pack(fill=tk.X)
         self.host_key = self._entry(key_row, "", 48)
-        self.host_key.configure(state=tk.READONLY)
+        self.host_key.configure(state="readonly")
         self.host_key.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         self.copy_key_button = self._button(key_row, "Copy", self.copy_pairing_key)
         self.copy_key_button.pack(side=tk.RIGHT)
