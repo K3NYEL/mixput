@@ -130,6 +130,13 @@ class NetworkIntegrationTests(unittest.TestCase):
         self.server._send_input(event)
         self._wait(self.receiver_backend.event_received, "forwarded input event")
         self.assertEqual(self.receiver_backend.events, [event])
+        self.assertEqual(self.client._ownership_epoch, self.server._ownership_epoch)
+        self.assertFalse(self.client._apply_remote_input({
+            "source_id": "host", "target_id": self.client.pairings.device_id,
+            "ownership_epoch": self.client._ownership_epoch - 1,
+            "sequence": 999, "event": event,
+        }))
+        self.assertEqual(self.receiver_backend.events, [event])
 
     def test_edge_handoff_is_bidirectional_and_routes_remote_input(self):
         self._start_server()
@@ -158,6 +165,7 @@ class NetworkIntegrationTests(unittest.TestCase):
         while self.server._control_owner != "host" and time.monotonic() < deadline:
             time.sleep(0.01)
         self.assertEqual(self.server._control_owner, "host")
+        self.assertGreaterEqual(self.server._ownership_epoch, 2)
         self.assertTrue(self.host_backend.capture_enabled)
         self.assertFalse(self.receiver_backend.capture_enabled)
 

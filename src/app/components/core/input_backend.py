@@ -129,15 +129,17 @@ class InputBackend:
                     if dx or dy:
                         self.on_event({"type": "mouse_move", "dx": dx, "dy": dy})
                     if self._relative_mode and self._screen_size:
+                        # Keep the source cursor parked while forwarding relative motion.
+                        # This is cursor confinement, not OS-level input suppression:
+                        # the native backend must still intercept clicks and key presses.
                         width, height = self._screen_size
-                        if position[0] <= 1 or position[0] >= width - 2 or position[1] <= 1 or position[1] >= height - 2:
-                            center = (max(2, width // 2), max(2, height // 2))
-                            self._suppress_move = True
-                            if self._controller is None:
-                                from pynput import keyboard
-                                self._controller = (keyboard.Controller(), mouse.Controller())
-                            self._controller[1].position = center
-                            self._last_position = center
+                        center = (max(2, width // 2), max(2, height // 2))
+                        self._suppress_move = True
+                        if self._controller is None:
+                            from pynput import keyboard
+                            self._controller = (keyboard.Controller(), mouse.Controller())
+                        self._controller[1].position = center
+                        self._last_position = center
 
             def on_click(x, y, button, pressed):
                 if is_enabled():

@@ -12,6 +12,7 @@ from app.components.core.pairing_handshake import (
 from app.components.core.pairing_store import PairingStore
 from app.components.core.secure_transport import SecureChannel
 from app.components.core.virtual_network import VirtualNetworkManager
+from app.components.core.input_ownership import InputOwnership
 
 MAX_DEVICES = 4
 MAX_CHAT_LENGTH = 1000
@@ -42,9 +43,21 @@ class NetworkServer:
         self._capture = None
         self._pending = {}
         self._peers = {}
-        self._control_owner = "host"
+        self._ownership = InputOwnership("host")
         self._local_mode = False
         self._host_name = socket.gethostname()[:64]
+
+    @property
+    def _control_owner(self):
+        return self._ownership.owner
+
+    @_control_owner.setter
+    def _control_owner(self, device_id):
+        self._ownership.force(device_id)
+
+    @property
+    def _ownership_epoch(self):
+        return self._ownership.epoch
 
     @property
     def connected_devices(self):
@@ -101,19 +114,24 @@ class NetworkServer:
         with self._lock:
             devices = self._device_snapshot_locked()
             owner = self._control_owner
+            epoch = self._ownership_epoch
             peers = list(self._peers.values())
         self.on_devices(devices)
         for peer in peers:
-            self._send_state(peer, devices, owner)
+            self._send_state(peer, devices, owner, ownership_epoch=epoch)
 
-    def _send_state(self, peer, devices=None, owner=None, enter_edge=None):
+    def _send_state(self, peer, devices=None, owner=None, enter_edge=None, ownership_epoch=None):
         if devices is None:
             with self._lock:
                 devices = self._device_snapshot_locked()
                 owner = self._control_owner
+                ownership_epoch = self._ownership_epoch
+        elif ownership_epoch is None:
+            ownership_epoch = self._ownership_epoch
         try:
             peer["channel"].send({"version": PROTOCOL_VERSION, "kind": "session_state",
                                   "devices": devices, "owner": owner, "enter_edge": enter_edge,
+                                  "ownership_epoch": ownership_epoch,
                                   "virtual_network": self.virtual_network.network_cidr})
         except (OSError, ProtocolError, ValueError):
             pass
@@ -139,10 +157,11 @@ class NetworkServer:
         with self._lock:
             if device_id != "host" and device_id not in self._peers:
                 return False
-            if self._control_owner == device_id:
+            allowed = {"host", *self._peers.keys()}
+            transfer = self._ownership.transfer(device_id, allowed)
+            if transfer is None:
                 return False
-            old = self._control_owner
-            self._control_owner = device_id
+            old, epoch = transfer
             peers = list(self._peers.values())
             devices = self._device_snapshot_locked()
         if self._capture:
@@ -154,7 +173,7 @@ class NetworkServer:
                 self._capture.park_cursor()
         self.on_devices(devices)
         for peer in peers:
-            self._send_state(peer, devices, device_id, enter_edge)
+            self._send_state(peer, devices, device_id, enter_edge, epoch)
         self.on_log(f"[Mixput] Control: {self._device_name(old)} → {self._device_name(device_id)}.")
         return True
 
@@ -183,11 +202,21 @@ class NetworkServer:
             if self._local_mode:
                 return
             target_id = self._control_owner
+            epoch = self._ownership_epoch
             peer = self._peers.get(target_id)
         if target_id == "host" or peer is None:
             return
         try:
-            peer["channel"].send({"version": PROTOCOL_VERSION, "kind": "input", "event": event})
+            with self._lock:
+                if self._control_owner != target_id or self._ownership_epoch != epoch:
+                    return
+                self._input_sequence = getattr(self, "_input_sequence", 0) + 1
+                sequence = self._input_sequence
+            peer["channel"].send({
+                "version": PROTOCOL_VERSION, "kind": "input",
+                "source_id": "host", "target_id": target_id,
+                "ownership_epoch": epoch, "sequence": sequence, "event": event,
+            })
         except (OSError, ProtocolError, ValueError) as error:
             self.on_log(f"[Mixput] Could not transmit input: {error}")
 
@@ -390,12 +419,19 @@ class NetworkServer:
                         self.on_log("[Mixput] Ignored input from a receiver device.")
                 elif kind == "control_switch":
                     side = message.get("side")
+                    requested_epoch = message.get("ownership_epoch")
                     with self._lock:
                         devices_now = self._device_snapshot_locked()
                         current_index = next((d["index"] for d in devices_now if d["id"] == client_id), -1)
                         target_index = current_index + (1 if side == "right" else -1 if side == "left" else 0)
                         target = next((d for d in devices_now if d["index"] == target_index), None)
-                        allowed = self._control_owner == client_id
+                        allowed = (
+                            self._control_owner == client_id
+                            and isinstance(requested_epoch, int)
+                            and not isinstance(requested_epoch, bool)
+                            and requested_epoch == self._ownership_epoch
+                            and side in ("left", "right")
+                        )
                     if allowed and target:
                         self._set_owner(target["id"], "left" if side == "right" else "right")
                 elif kind == "chat":
