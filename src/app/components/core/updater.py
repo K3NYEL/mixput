@@ -170,8 +170,20 @@ log "Updated Mixput started with PID $NEW_PID."
     script_path.write_text(script, encoding="utf-8")
     script_path.chmod(0o700)
     with log_path.open("a",encoding="utf-8") as stream: stream.write("\n--- update started ---\n")
-    subprocess.Popen(["/bin/bash",str(script_path)],start_new_session=True,stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,close_fds=True)
+    command = ["/bin/bash", str(script_path)]
+    needs_elevation = not os.access(app_dir, os.W_OK) or (
+        executable.exists() and not os.access(executable, os.W_OK)
+    )
+    if needs_elevation:
+        pkexec = shutil.which("pkexec")
+        if not pkexec:
+            raise PermissionError(
+                f"Mixput is installed in a protected directory ({app_dir}). "
+                "Install it in your home directory or install pkexec to allow an authorized update."
+            )
+        command = [pkexec, *command]
+    subprocess.Popen(command, start_new_session=True, stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
 
 def apply_update_and_restart(extracted_dir, progress_callback=None):
     if not is_frozen(): raise RuntimeError("Automatic updates are only available in packaged installations.")
