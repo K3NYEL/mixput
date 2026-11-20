@@ -70,14 +70,14 @@ class NetworkServer:
         for peer in peers:
             self._send_state(peer, devices, owner)
 
-    def _send_state(self, peer, devices=None, owner=None):
+    def _send_state(self, peer, devices=None, owner=None, enter_edge=None):
         if devices is None:
             with self._lock:
                 devices = self._device_snapshot_locked()
                 owner = self._control_owner
         try:
             peer["channel"].send({"version": PROTOCOL_VERSION, "kind": "session_state",
-                                  "devices": devices, "owner": owner})
+                                  "devices": devices, "owner": owner, "enter_edge": enter_edge})
         except (OSError, ProtocolError, ValueError):
             pass
 
@@ -114,7 +114,7 @@ class NetworkServer:
             if device_id == "host" and enter_edge:
                 self._capture.warp_to_edge(enter_edge)
         for peer in peers:
-            self._send_state(peer, devices, device_id)
+            self._send_state(peer, devices, device_id, enter_edge)
         self.on_log(f"[Mixput] Control: {self._device_name(old)} → {self._device_name(device_id)}.")
         return True
 
@@ -378,7 +378,10 @@ class NetworkServer:
                     self._capture.set_capture_enabled(self._control_owner == "host")
                 self._notify_devices()
                 self.on_log("[Mixput] A device disconnected.")
-                self.on_status("connected" if self._peers else "listening")
+            if self.running:
+                with self._lock:
+                    has_peers = bool(self._peers)
+                self.on_status("connected" if has_peers else "listening")
 
     def _close_all_peers(self):
         with self._lock:

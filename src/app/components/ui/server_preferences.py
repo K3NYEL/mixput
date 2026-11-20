@@ -27,6 +27,7 @@ class ServerPreferences(tk.Frame):
             on_status=self._queue_server_status,
             on_pairing_request=self._queue_pairing_request,
             on_chat=self._queue_chat,
+            on_devices=self._queue_server_devices,
         )
         self.server.set_input_backend(self.host_input)
         self.client = NetworkClient(
@@ -191,6 +192,9 @@ class ServerPreferences(tk.Frame):
             self.chat_box.configure(state=tk.DISABLED)
         except (tk.TclError, AttributeError):
             pass
+
+    def _queue_server_devices(self, devices):
+        self._queue_session({"devices": devices, "owner": "host"})
 
     def _queue_session(self, state):
         try:
