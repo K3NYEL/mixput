@@ -203,7 +203,7 @@ class App(tk.Canvas):
                   activeforeground=c["text_primary"]).pack(anchor=tk.W)
 
         connection = self._page("connection")
-        self._heading(connection, "Connection", "Start the Mixput endpoint or connect this laptop to an existing host.")
+        self._heading(connection, "Connection", "Configure and manage the Mixput server hosted by this laptop.")
         self.connection_panel = create_mixput_frame(connection)
         self.connection_panel.server_preferences.on_state_changed = self._queue_dashboard_state
         self.connection_panel.server_preferences.on_activity = self._queue_dashboard_activity
@@ -289,7 +289,7 @@ class App(tk.Canvas):
         actions = tk.Frame(nearby, bg=c["bg_main"])
         actions.pack(fill=tk.X, pady=(8, 0))
         self.use_device_button = tk.Button(
-            actions, text="Use selected device",
+            actions, text="Connect to selected server",
             command=self._use_selected_device, state=tk.DISABLED,
             relief=tk.FLAT, cursor="hand2", padx=14, pady=8,
             bg=c["border"], fg=c["text_primary"],
@@ -446,8 +446,7 @@ class App(tk.Canvas):
         if not device["sharing"]:
             return
         panel = self.connection_panel.server_preferences
-        panel.set_discovered_device(device["ip"], device["port"])
-        self.show_page("connection")
+        panel.connect_discovered_device(device["ip"], device["port"])
 
     def _set_discovery_sharing(self, sharing, port):
         self.discovery.set_endpoint(tcp_port=port, sharing=sharing)
