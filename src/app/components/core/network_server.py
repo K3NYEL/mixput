@@ -1,5 +1,4 @@
 """LAN host for explicitly authorized Mixput input-sharing sessions."""
-import secrets
 import socket
 import threading
 
@@ -122,7 +121,7 @@ class NetworkServer:
                     raise ProtocolError("Unsupported peer protocol.")
                 if message.get("kind") == "disconnect":
                     break
-        except (OSError, ProtocolError, RuntimeError, ValueError) as error:
+        except Exception as error:
             if self.running:
                 self.on_log(f"[Mixput] Peer session ended: {error}")
         finally:
