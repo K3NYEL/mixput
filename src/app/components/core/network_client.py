@@ -29,12 +29,37 @@ class NetworkClient:
         self._thread = None
         self._lock = threading.RLock()
         self._control_owner = "host"
+        self._local_mode = False
         self._device_id = self.pairings.device_id
         self._index = 1
         self._devices = []
         if self.input_backend is not None:
             self.input_backend.on_event = self._send_input
             self.input_backend.on_edge = self._on_local_edge
+            self.input_backend.on_toggle_local = self.toggle_local_mode
+
+    @property
+    def local_mode(self):
+        with self._lock:
+            return self._local_mode
+
+    def toggle_local_mode(self):
+        return self.set_local_mode(not self.local_mode)
+
+    def set_local_mode(self, enabled):
+        enabled = bool(enabled)
+        with self._lock:
+            if self._local_mode == enabled:
+                return False
+            self._local_mode = enabled
+        if self.input_backend:
+            self.input_backend.release_all()
+        self.on_message(f"[Mixput] Local mode {'enabled' if enabled else 'disabled'}.")
+        self.on_session({
+            "devices": self._devices, "owner": self._control_owner,
+            "index": self._index, "local_mode": enabled,
+        })
+        return True
 
     def connect(self, host, port=8080):
         if self.running:
@@ -54,7 +79,7 @@ class NetworkClient:
 
     def _on_local_edge(self, side):
         with self._lock:
-            if self._control_owner != self._device_id or not self._channel:
+            if self._local_mode or self._control_owner != self._device_id or not self._channel:
                 return
             target = self._index + (1 if side == "right" else -1)
             if not any(d.get("index") == target for d in self._devices):
@@ -124,7 +149,10 @@ class NetworkClient:
             self.input_backend.set_relative_mode(False)
             if active and old_owner != self._device_id:
                 self.input_backend.warp_to_edge(message.get("enter_edge") or "left")
-        self.on_session({"devices": devices, "owner": owner, "index": self._index})
+        self.on_session({
+            "devices": devices, "owner": owner, "index": self._index,
+            "local_mode": self.local_mode,
+        })
 
     def _run(self, host, port):
         channel = None
@@ -173,6 +201,8 @@ class NetworkClient:
                     self._apply_session_state(message)
                 elif kind == "input":
                     event = message.get("event")
+                    if self.local_mode:
+                        continue
                     if isinstance(event, dict) and event.get("type") in EVENT_TYPES and self.input_backend:
                         if not self.input_backend.apply_event(event):
                             self.on_message("[Mixput] An input event could not be applied.")
@@ -190,6 +220,7 @@ class NetworkClient:
             with self._lock:
                 self._control_owner = "host"
                 self._devices = []
+                self._local_mode = False
             if self.input_backend:
                 self.input_backend.stop_capture()
                 self.input_backend.release_all()

@@ -33,6 +33,7 @@ class NetworkServer:
         self._pending = {}
         self._peers = {}
         self._control_owner = "host"
+        self._local_mode = False
         self._host_name = socket.gethostname()[:64]
 
     @property
@@ -60,6 +61,28 @@ class NetworkServer:
         self._capture = backend
         backend.on_event = self._send_input
         backend.on_edge = self._on_local_edge
+        backend.on_toggle_local = self.toggle_local_mode
+
+    @property
+    def local_mode(self):
+        with self._lock:
+            return self._local_mode
+
+    def toggle_local_mode(self):
+        return self.set_local_mode(not self.local_mode)
+
+    def set_local_mode(self, enabled):
+        enabled = bool(enabled)
+        with self._lock:
+            if self._local_mode == enabled:
+                return False
+            self._local_mode = enabled
+        if self._capture:
+            self._capture.release_all()
+            if not enabled and self._control_owner != "host":
+                self._capture.park_cursor()
+        self.on_log(f"[Mixput] Local mode {'enabled' if enabled else 'disabled'}.")
+        return True
 
     def _notify_devices(self):
         with self._lock:
@@ -132,7 +155,7 @@ class NetworkServer:
         if side != "right":
             return
         with self._lock:
-            if self._control_owner != "host":
+            if self._local_mode or self._control_owner != "host":
                 return
             next_peer = next((p for p in sorted(self._peers.values(), key=lambda x: x["index"])
                               if p["index"] == 1), None)
@@ -143,6 +166,8 @@ class NetworkServer:
         if not isinstance(event, dict) or event.get("type") not in EVENT_TYPES:
             return
         with self._lock:
+            if self._local_mode:
+                return
             target_id = self._control_owner
             peer = self._peers.get(target_id)
         if target_id == "host" or peer is None:
