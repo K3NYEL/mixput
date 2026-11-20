@@ -152,7 +152,7 @@ def _apply_linux_update(extracted_dir, app_dir, executable, stage_dir):
     script = f"""#!/usr/bin/env bash
 set -Eeuo pipefail
 LOG={q(str(log_path))}
-log() {{ printf '[%s] %s\n' "$(date --iso-8601=seconds)" "$*" >> "$LOG"; }}
+log() {{ printf '[%s] %s\\n' "$(date --iso-8601=seconds)" "$*" >> "$LOG"; }}
 trap 'code=$?; log "ERROR at line $LINENO (exit $code)"' ERR
 log 'Updater started; waiting for Mixput to exit.'
 while kill -0 {os.getpid()} 2>/dev/null; do sleep 1; done
