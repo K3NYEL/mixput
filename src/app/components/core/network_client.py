@@ -151,7 +151,8 @@ class NetworkClient:
             raise ProtocolError("The server provided an invalid ownership epoch.")
         with self._lock:
             if epoch < self._ownership_epoch:
-                raise ProtocolError("A stale ownership state was received.")
+                return False
+            previous_epoch = self._ownership_epoch
         network_cidr = message.get("virtual_network")
         try:
             virtual_network = ipaddress.ip_network(network_cidr, strict=True)
@@ -187,7 +188,8 @@ class NetworkClient:
             self._virtual_network = str(virtual_network)
             self._control_owner = owner
             self._ownership_epoch = epoch
-            self._last_input_sequence = 0
+            if epoch != previous_epoch:
+                self._last_input_sequence = 0
             active = owner == self._device_id
         if self.input_backend:
             if old_owner == self._device_id and not active:
@@ -203,6 +205,7 @@ class NetworkClient:
             "virtual_network": self._virtual_network,
             "ownership_epoch": self._ownership_epoch,
         })
+        return True
 
     def _apply_remote_input(self, message):
         with self._lock:
