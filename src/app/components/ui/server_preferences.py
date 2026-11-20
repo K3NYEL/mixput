@@ -1,3 +1,4 @@
+import ipaddress
 import tkinter as tk
 from tkinter import messagebox
 
@@ -222,6 +223,12 @@ class ServerPreferences(tk.Frame):
             port = self._read_port(self.client_port)
             if not host:
                 raise ValueError("Enter the LAN IP shown on the host laptop.")
+            try:
+                parsed_host = ipaddress.ip_address(host)
+            except ValueError as error:
+                raise ValueError("Enter the host laptop IPv4 address.") from error
+            if parsed_host.version != 4:
+                raise ValueError("Only IPv4 LAN addresses are supported currently.")
             if not key:
                 raise ValueError("Paste the pairing key from the host laptop.")
         except ValueError as error:
