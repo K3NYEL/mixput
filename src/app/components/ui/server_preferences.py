@@ -187,7 +187,7 @@ class ServerPreferences(tk.Frame):
             sender = str(message.get("sender", "Device"))[:64]
             text = str(message.get("text", ""))[:1000]
             self.chat_box.configure(state=tk.NORMAL)
-            self.chat_box.insert(tk.END, f"{sender}: {text}\\n")
+            self.chat_box.insert(tk.END, f"{sender}: {text}" + chr(10))
             self.chat_box.see(tk.END)
             self.chat_box.configure(state=tk.DISABLED)
         except (tk.TclError, AttributeError):
