@@ -87,7 +87,10 @@ class X11GrabController:
         alt = "alt" in self._held
         if pressed and key == "m" and ctrl and alt and not self._hotkey_latched:
             self._hotkey_latched = True
-            self.on_toggle_local()
+            # Modifiers may already have been forwarded before the full chord was known.
+            self.on_event({"type": "key_up", "key": "ctrl"})
+            self.on_event({"type": "key_up", "key": "alt"})
+            threading.Thread(target=self.on_toggle_local, name="MixputLocalModeToggle", daemon=True).start()
             return
         if not pressed and key == "m":
             self._hotkey_latched = False
