@@ -341,7 +341,9 @@ class ServerPreferences(tk.Frame):
             self.log_box.configure(state=tk.DISABLED)
             self.on_activity(str(message))
         except tk.TclError:
-            pass(self, status):
+            pass
+
+    def _queue_server_status(self, status):
         try:
             self.after(0, self._apply_server_status, status)
         except tk.TclError:

@@ -62,13 +62,7 @@ class NetworkClient:
             else:
                 channel = self._channel
         if channel is None:
-            if self.input_backend:
-                self.input_backend.warp_to_edge(side)
-                self.input_backend.set_capture_enabled(True)
             return
-        if self.input_backend:
-            self.input_backend.set_capture_enabled(False)
-            self.input_backend.release_all()
         try:
             channel.send({"version": PROTOCOL_VERSION, "kind": "control_switch", "side": side})
         except (OSError, ProtocolError, ValueError) as error:
