@@ -287,6 +287,7 @@ class App(tk.Canvas):
         if selected and selected[0] < len(self.discovered_devices):
             selected_id = self.discovered_devices[selected[0]]["id"]
         self.devices_list.delete(0, tk.END)
+        self.use_device_button.configure(state=tk.DISABLED)
         for device in devices:
             state = "Sharing" if device["sharing"] else "Available"
             self.devices_list.insert(
