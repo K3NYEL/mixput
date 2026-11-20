@@ -1,4 +1,4 @@
-"""Authenticated encrypted TCP channel with per-direction sequence numbers."""
+# Authenticated encrypted TCP channel with per-direction sequence numbers.
 import json
 import socket
 import threading
@@ -9,7 +9,7 @@ from app.components.core.input_protocol import MAX_MESSAGE_BYTES, ProtocolError
 
 
 class SecureChannel:
-    """Fernet encryption, integrity checks, framing, and replay ordering."""
+    # Fernet encryption, integrity checks, framing, and replay ordering.
 
     def __init__(self, connection, token):
         try:
