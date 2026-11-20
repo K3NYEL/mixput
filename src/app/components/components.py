@@ -92,11 +92,6 @@ class App(tk.Canvas):
         self.sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 10))
         self.sidebar.pack_propagate(False)
 
-        tk.Label(
-            self.sidebar, text="WORKSPACE", font=("Arial", 8, "bold"),
-            bg=c["bg_secondary"], fg=c["text_secondary"],
-        ).pack(anchor=tk.W, padx=14, pady=(18, 9))
-
         for page_id, label in self.NAV_ITEMS:
             button = tk.Button(
                 self.sidebar, text=label, anchor=tk.W,
@@ -118,17 +113,12 @@ class App(tk.Canvas):
         self._pages[page_id] = frame
         return frame
 
-    def _heading(self, parent, title, subtitle):
+    def _heading(self, parent, title, subtitle=None):
         c = self.CURRENT_THEME
         tk.Label(
             parent, text=title, font=("Arial", 20, "bold"),
             bg=c["bg_main"], fg=c["text_primary"],
-        ).pack(anchor=tk.W, pady=(8, 2))
-        tk.Label(
-            parent, text=subtitle, font=("Arial", 10),
-            bg=c["bg_main"], fg=c["text_secondary"],
-            wraplength=760, justify=tk.LEFT,
-        ).pack(anchor=tk.W, pady=(0, 16))
+        ).pack(anchor=tk.W, pady=(12, 14))
 
     def _card(self, parent, title, detail):
         c = self.CURRENT_THEME
