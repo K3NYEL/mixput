@@ -121,6 +121,10 @@ class NetworkIntegrationTests(unittest.TestCase):
         self.assertEqual(host_device["virtual_ip"], "10.77.0.1")
         self.assertEqual(self.client.virtual_ip, client_device["virtual_ip"])
         self.assertNotEqual(host_device["virtual_ip"], client_device["virtual_ip"])
+        deadline = time.monotonic() + 5
+        while self.client.virtual_ip is None and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertIsNotNone(self.client.virtual_ip)
 
         self.server._set_owner(self.client.pairings.device_id, "left")
         event = {"type": "mouse_move", "dx": 12, "dy": -4}
