@@ -8,6 +8,7 @@ from .ui.mixput_frame import create_mixput_frame
 from .core.updater import *
 from .core.updater import obtain_version
 
+
 class App(tk.Canvas):
     def __init__(self):
         super().__init__()
@@ -93,8 +94,6 @@ class App(tk.Canvas):
         )
 
     def create_main_content(self):
-        
-        # Contenedor principal
         self.main_content = tk.Frame(
             self.canvas,
             bg=theme.CURRENT_THEME["bg_secondary"],
@@ -110,7 +109,6 @@ class App(tk.Canvas):
             anchor=tk.N,
         )
 
-        # 1. Encabezado arriba
         self.header_frame = tk.Frame(
             self.main_content,
             bg=theme.CURRENT_THEME["bg_secondary"],
@@ -151,6 +149,7 @@ class App(tk.Canvas):
 
     def theme_apply(self):
         t = self.CURRENT_THEME
+        theme.CURRENT_THEME = t
 
         self.config(bg=t["bg_main"])
         self.canvas.config(bg=t["bg_main"])
@@ -158,11 +157,18 @@ class App(tk.Canvas):
         self.main_content.config(bg=t["bg_secondary"])
         self.lbl_title.config(bg=t["bg_secondary"], fg=t["text_primary"])
         self.header_frame.config(bg=t["bg_secondary"])
-        self.system_preferences_label.config(bg=t["bg_secondary"], fg=t["text_primary"])
-        self.mixput_preferences_label.config(bg=t["bg_secondary"], fg=t["text_primary"])
+        self.system_preferences_label.config(
+            bg=t["bg_secondary"], fg=t["text_primary"]
+        )
+        self.mixput_preferences_label.config(
+            bg=t["bg_secondary"], fg=t["text_primary"]
+        )
         self.theme_button.config(
             bg=t["bg_secondary"],
             fg=t["text_primary"],
             activebackground=t["bg_secondary"],
             activeforeground=t["text_primary"],
         )
+
+        if hasattr(self.mixput, "server_preferences"):
+            self.mixput.server_preferences.apply_theme(t)
