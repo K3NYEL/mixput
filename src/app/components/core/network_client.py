@@ -160,7 +160,7 @@ class NetworkClient:
                         self.input_backend.warp_to_edge("left")
                         self.input_backend.set_capture_enabled(True)
                     self.on_message("[Mixput] This computer now has keyboard and mouse control.")
-        except (OSError, ProtocolError, ValueError, KeyError) as error:
+        except (OSError, ProtocolError, ValueError, KeyError, RuntimeError) as error:
             if self.running:
                 self.on_message(f"[Mixput] Connection failed: {error}")
         finally:
