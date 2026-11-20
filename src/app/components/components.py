@@ -3,7 +3,7 @@ import sys
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 from PIL import Image, ImageTk
 
 from app.components import theme
@@ -16,6 +16,8 @@ from .core.updater import (
     check_for_update,
     download_and_stage,
     apply_update_and_restart,
+    get_update_log_path,
+    consume_update_diagnostics,
 )
 
 
@@ -49,6 +51,7 @@ class App(tk.Canvas):
         self.discovery.start()
         self.show_page("home")
         self.after(1500, self.check_for_updates)
+        self.after(1800, self._show_update_diagnostics)
 
     def _build_shell(self):
         c = self.CURRENT_THEME
@@ -453,6 +456,19 @@ class App(tk.Canvas):
             self.discovery.stop()
         super().destroy()
 
+    def _show_update_diagnostics(self):
+        details = consume_update_diagnostics()
+        if not details:
+            return
+        log_path = get_update_log_path()
+        messagebox.showwarning(
+            "Previous update did not complete",
+            "Mixput detected an error during the previous update attempt. "
+            "The current installed copy was opened.\n\n"
+            + details + "\n\nFull log: " + str(log_path),
+            parent=self.winfo_toplevel(),
+        )
+
     def check_for_updates(self, manual=True):
         if self._update_check_running or self._update_install_running:
             return
@@ -496,32 +512,114 @@ class App(tk.Canvas):
         ):
             self._download_update(info)
 
+    def _show_update_progress(self, version):
+        colors = self.CURRENT_THEME
+        window = tk.Toplevel(self.winfo_toplevel())
+        window.title("Updating Mixput")
+        window.transient(self.winfo_toplevel())
+        window.resizable(False, False)
+        window.configure(bg=colors["bg_main"])
+        window.protocol("WM_DELETE_WINDOW", lambda: None)
+        frame = tk.Frame(window, bg=colors["bg_main"], padx=22, pady=18)
+        frame.pack(fill=tk.BOTH, expand=True)
+        tk.Label(frame, text=f"Installing Mixput {version}", font=("Arial", 14, "bold"),
+                 bg=colors["bg_main"], fg=colors["text_primary"]).pack(anchor=tk.W)
+        self._update_status = tk.Label(frame, text="Preparing download…", font=("Arial", 9),
+                                       bg=colors["bg_main"], fg=colors["text_secondary"])
+        self._update_status.pack(anchor=tk.W, pady=(10, 7))
+        self._update_progressbar = ttk.Progressbar(frame, length=420, mode="indeterminate", maximum=100)
+        self._update_progressbar.pack(fill=tk.X, pady=(0, 8))
+        self._update_percent = tk.Label(frame, text="Waiting for server", font=("Arial", 8),
+                                        bg=colors["bg_main"], fg=colors["text_secondary"])
+        self._update_percent.pack(anchor=tk.E)
+        self._update_log = tk.Text(frame, height=5, width=58, state=tk.DISABLED,
+                                   relief=tk.FLAT, bg=colors["bg_secondary"],
+                                   fg=colors["text_secondary"], font=("Consolas", 8), wrap=tk.WORD)
+        self._update_log.pack(fill=tk.X, pady=(12, 0))
+        self._update_log.configure(state=tk.NORMAL)
+        self._update_log.insert(tk.END, "Diagnostic log: " + str(get_update_log_path()) + "\n")
+        self._update_log.configure(state=tk.DISABLED)
+        self._update_window = window
+        window.update_idletasks()
+        window.geometry("+%d+%d" % (self.winfo_rootx() + 80, self.winfo_rooty() + 80))
+
+    def _update_progress(self, phase, downloaded=0, total=0, message=""):
+        if not hasattr(self, "_update_window") or not self._update_window.winfo_exists():
+            return
+        labels = {
+            "download": "Downloading update…", "verify": "Verifying downloaded files…",
+            "extract": "Extracting update…", "ready": "Download verified.",
+            "install": "Installing update…", "restart": "Restarting Mixput…",
+            "error": "Update failed.",
+        }
+        self._update_status.configure(text=labels.get(phase, phase.title()))
+        if phase == "download" and total > 0:
+            self._update_progressbar.stop()
+            self._update_progressbar.configure(mode="determinate", maximum=total, value=downloaded)
+            self._update_percent.configure(text=f"{downloaded / total * 100:.0f}%")
+        elif phase == "download":
+            self._update_progressbar.configure(mode="indeterminate")
+            self._update_progressbar.start(12)
+            self._update_percent.configure(text="Downloading…")
+        elif phase in ("verify", "extract", "install"):
+            self._update_progressbar.configure(mode="indeterminate")
+            self._update_progressbar.start(12)
+            self._update_percent.configure(text="Please wait…")
+        elif phase in ("ready", "restart"):
+            self._update_progressbar.stop()
+            self._update_progressbar.configure(mode="determinate", maximum=1, value=1)
+            self._update_percent.configure(text="100%")
+        if message:
+            self._update_log.configure(state=tk.NORMAL)
+            self._update_log.insert(tk.END, message + "\n")
+            self._update_log.see(tk.END)
+            self._update_log.configure(state=tk.DISABLED)
+
+    def _queue_update_progress(self, phase, downloaded=0, total=0, message=""):
+        try:
+            self.after(0, self._update_progress, phase, downloaded, total, message)
+        except tk.TclError:
+            pass
+
     def _download_update(self, info):
         if self._update_install_running:
             return
         self._update_install_running = True
         self.update_button.configure(state=tk.DISABLED)
+        self._show_update_progress(info.get("version", "new version"))
+        self._queue_update_progress("download", 0, 0, "Starting secure HTTPS download.")
 
         def worker():
             try:
-                staged_dir = download_and_stage(info["url"], info["name"])
+                staged_dir = download_and_stage(
+                    info["url"], info["name"], progress_callback=self._queue_update_progress
+                )
                 self.after(0, lambda: self._apply_staged_update(staged_dir))
             except Exception as exc:
                 error = str(exc)
                 self.after(0, lambda: self._update_install_failed(error))
 
-        threading.Thread(target=worker, daemon=True).start()
+        threading.Thread(target=worker, daemon=True, name="MixputUpdaterDownload").start()
 
     def _apply_staged_update(self, staged_dir):
         try:
-            apply_update_and_restart(staged_dir)
+            self._update_progress("install", 0, 0, "Launching the platform update helper.")
+            apply_update_and_restart(staged_dir, progress_callback=self._queue_update_progress)
         except Exception as exc:
             self._update_install_failed(str(exc))
 
     def _update_install_failed(self, error):
         self._update_install_running = False
         self.update_button.configure(state=tk.NORMAL)
+        self._update_progress("error", 0, 0, "Update failed: " + error)
+        if hasattr(self, "_update_window") and self._update_window.winfo_exists():
+            self._update_status.configure(text="Update failed. Your current version is still installed.")
+            self._update_percent.configure(text="See details below")
+            self._update_progressbar.stop()
+            self._update_progressbar.configure(mode="determinate", maximum=1, value=0)
+            tk.Button(self._update_window, text="Close", command=self._update_window.destroy,
+                      relief=tk.FLAT, padx=14, pady=6).pack(pady=(8, 0), anchor=tk.E)
         messagebox.showerror(
-            "Update error", f"Could not install the update:\\n{error}",
+            "Update error", f"Could not install the update:\n{error}",
             parent=self.winfo_toplevel(),
         )

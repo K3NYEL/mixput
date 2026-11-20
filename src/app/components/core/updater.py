@@ -1,367 +1,227 @@
-
+"""Safe staged updater with progress reporting and restart diagnostics."""
 from __future__ import annotations
-
-import os
-import platform
-import shutil
-import stat
-import subprocess
-import sys
-import tempfile
-import zipfile
-
+import os, platform, shutil, stat, subprocess, sys, tempfile, zipfile
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
-
 import requests
 from packaging.version import InvalidVersion, Version
-
 from .version import __version__
-
 
 REPO = "Under-our-Eyes/mixput"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
-
-REQUEST_HEADERS = {
-    "Accept": "application/vnd.github+json",
-    "User-Agent": "mixput-updater",
-}
-
-MAX_DOWNLOAD_SIZE = 1024 * 1024 * 1024  # 1 GB
+REQUEST_HEADERS = {"Accept": "application/vnd.github+json", "User-Agent": "mixput-updater"}
+MAX_DOWNLOAD_SIZE = 1024 * 1024 * 1024
 MAX_ARCHIVE_FILES = 20_000
-MAX_EXTRACTED_SIZE = 1024 * 1024 * 1024  # 1 GB
+MAX_EXTRACTED_SIZE = 1024 * 1024 * 1024
 
+def _report(callback, phase, downloaded=0, total=0, message=""):
+    if callback:
+        try: callback(phase, downloaded, total, message)
+        except Exception: pass
 
-def obtain_version() -> str:
-    """Return the locally installed version without requiring Internet."""
-    return __version__
+def obtain_version(): return __version__
+def is_frozen(): return bool(getattr(sys, "frozen", False))
+def get_app_dir(): return Path(sys.executable).resolve().parent if is_frozen() else Path(__file__).resolve().parents[3]
 
-
-def update_error(message: str) -> None:
-    raise RuntimeError(f"Update Error: {message}")
-
-
-def is_frozen() -> bool:
-    return bool(getattr(sys, "frozen", False))
-
-
-def get_app_dir() -> Path:
-    if is_frozen():
-        return Path(sys.executable).resolve().parent
-
-    return Path(__file__).resolve().parents[3]
-
-
-def expected_asset_name() -> str | None:
+def expected_asset_name():
     system = platform.system().lower()
+    return "mixput-windows-x64.zip" if system == "windows" else "mixput-linux-x64.zip" if system == "linux" else None
 
-    if system == "windows":
-        return "mixput-windows-x64.zip"
-
-    if system == "linux":
-        return "mixput-linux-x64.zip"
-
-    return None
-
-
-def check_for_update() -> dict | None:
-    """Check GitHub Releases for a newer version.
-
-    Returns update information, or None if no update is available.
-    Network errors are allowed to propagate so the UI can distinguish
-    an unavailable service from an up-to-date installation.
-    """
+def check_for_update():
     asset_name = expected_asset_name()
-
-    if asset_name is None:
-        return None
-
-    response = requests.get(
-        API_URL,
-        headers=REQUEST_HEADERS,
-        timeout=(5, 12),
-    )
+    if not asset_name: return None
+    response = requests.get(API_URL, headers=REQUEST_HEADERS, timeout=(5, 12))
     response.raise_for_status()
-
     release = response.json()
     tag = release.get("tag_name", "").strip()
-
-    if not tag:
-        return None
-
+    if not tag: return None
     try:
-        latest_version = Version(tag.removeprefix("v"))
-        current_version = Version(__version__)
-    except InvalidVersion:
-        return None
-
-    if latest_version <= current_version:
-        return None
-
+        latest, current = Version(tag.removeprefix("v")), Version(__version__)
+    except InvalidVersion: return None
+    if latest <= current: return None
     for asset in release.get("assets", []):
-        if asset.get("name") != asset_name:
-            continue
+        if asset.get("name") == asset_name:
+            url = asset.get("browser_download_url", "")
+            if urlparse(url).scheme == "https":
+                return {"version": str(latest), "url": url, "name": asset_name, "release_url": release.get("html_url")}
+    raise RuntimeError(f"Release {tag} exists, but its {asset_name} asset is missing.")
 
-        download_url = asset.get("browser_download_url", "")
-
-        if urlparse(download_url).scheme != "https":
-            continue
-
-        return {
-            "version": str(latest_version),
-            "url": download_url,
-            "name": asset_name,
-            "release_url": release.get("html_url"),
-        }
-
-    return None
-
-
-def _validate_archive(archive: zipfile.ZipFile) -> None:
-    """Reject unsafe paths, symbolic links and oversized archives."""
+def _validate_archive(archive):
     entries = archive.infolist()
-
-    if not entries or len(entries) > MAX_ARCHIVE_FILES:
-        raise ValueError("Invalid number of files in update archive.")
-
+    if not entries or len(entries) > MAX_ARCHIVE_FILES: raise ValueError("Invalid number of files in update archive.")
     total_size = 0
-
     for entry in entries:
         member = PurePosixPath(entry.filename)
-
-        if member.is_absolute() or ".." in member.parts:
-            raise ValueError("Unsafe path found in update archive.")
-
-        if not member.parts or ":" in member.parts[0]:
-            raise ValueError("Invalid path found in update archive.")
-
-        unix_mode = entry.external_attr >> 16
-
-        if stat.S_ISLNK(unix_mode):
-            raise ValueError("Symbolic links are not allowed in updates.")
-
+        if member.is_absolute() or ".." in member.parts: raise ValueError("Unsafe path found in update archive.")
+        if not member.parts or ":" in member.parts[0]: raise ValueError("Invalid path found in update archive.")
+        if stat.S_ISLNK(entry.external_attr >> 16): raise ValueError("Symbolic links are not allowed in updates.")
         total_size += entry.file_size
+        if total_size > MAX_EXTRACTED_SIZE: raise ValueError("Update archive exceeds the extraction limit.")
 
-        if total_size > MAX_EXTRACTED_SIZE:
-            raise ValueError("Update archive exceeds the extraction limit.")
-
-
-def download_and_stage(url: str, filename: str) -> Path:
-    """Download, validate and extract an update into a temporary directory."""
-    if urlparse(url).scheme != "https":
-        raise ValueError("Update downloads must use HTTPS.")
-
+def download_and_stage(url, filename, progress_callback=None):
+    if urlparse(url).scheme != "https": raise ValueError("Update downloads must use HTTPS.")
     safe_filename = Path(filename).name
-
-    if not safe_filename.lower().endswith(".zip"):
-        raise ValueError("Unsupported update archive.")
-
+    if not safe_filename.lower().endswith(".zip"): raise ValueError("Unsupported update archive.")
     stage_dir = Path(tempfile.mkdtemp(prefix="mixput_update_"))
-    zip_path = stage_dir / safe_filename
-    extract_dir = stage_dir / "extracted"
-
+    zip_path, extract_dir = stage_dir / safe_filename, stage_dir / "extracted"
     try:
-        with requests.get(
-            url,
-            headers={"User-Agent": "mixput-updater"},
-            stream=True,
-            timeout=(10, 60),
-        ) as response:
+        _report(progress_callback, "download", 0, 0, "Connecting to release server…")
+        with requests.get(url, headers={"User-Agent": "mixput-updater"}, stream=True, timeout=(10, 60)) as response:
             response.raise_for_status()
-
-            if urlparse(response.url).scheme != "https":
-                raise ValueError("The download did not remain on HTTPS.")
-
-            content_length = response.headers.get("Content-Length")
-
-            if content_length and int(content_length) > MAX_DOWNLOAD_SIZE:
-                raise ValueError("Update download exceeds the size limit.")
-
+            if urlparse(response.url).scheme != "https": raise ValueError("The download did not remain on HTTPS.")
+            total = int(response.headers.get("Content-Length") or 0)
+            if total > MAX_DOWNLOAD_SIZE: raise ValueError("Update download exceeds the size limit.")
             downloaded = 0
-
             with zip_path.open("wb") as output:
-                for chunk in response.iter_content(chunk_size=65_536):
-                    if not chunk:
-                        continue
-
+                for chunk in response.iter_content(chunk_size=65536):
+                    if not chunk: continue
                     downloaded += len(chunk)
-
-                    if downloaded > MAX_DOWNLOAD_SIZE:
-                        raise ValueError("Update download exceeds the size limit.")
-
+                    if downloaded > MAX_DOWNLOAD_SIZE: raise ValueError("Update download exceeds the size limit.")
                     output.write(chunk)
-
-        with zipfile.ZipFile(zip_path, "r") as archive:
+                    message = f"Downloaded {downloaded / 1048576:.1f} MB" + (f" of {total / 1048576:.1f} MB" if total else "")
+                    _report(progress_callback, "download", downloaded, total, message)
+        _report(progress_callback, "verify", 0, 0, "Verifying archive integrity…")
+        with zipfile.ZipFile(zip_path) as archive:
             _validate_archive(archive)
-
-            corrupted_file = archive.testzip()
-
-            if corrupted_file:
-                raise ValueError(
-                    f"Corrupted file in update archive: {corrupted_file}"
-                )
-
+            bad = archive.testzip()
+            if bad: raise ValueError(f"Corrupted file in update archive: {bad}")
+            expected = "mixput.exe" if platform.system().lower() == "windows" else "mixput"
+            names = [Path(name).name.lower() for name in archive.namelist() if not name.endswith("/")]
+            if expected not in names: raise ValueError(f"Update archive does not contain {expected}.")
+            _report(progress_callback, "extract", 0, 0, "Extracting update files…")
             extract_dir.mkdir()
             archive.extractall(extract_dir)
-
-        if not any(extract_dir.iterdir()):
-            raise ValueError("The update archive is empty.")
-
+        if not any(extract_dir.iterdir()): raise ValueError("The update archive is empty.")
+        _report(progress_callback, "ready", 1, 1, "Update downloaded and verified.")
         return extract_dir
-
     except Exception:
         shutil.rmtree(stage_dir, ignore_errors=True)
         raise
 
+def _apply_windows_update(extracted_dir, app_dir, executable, stage_dir):
+    import os as _os
+    log_dir = Path(_os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Mixput" / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "update.log"
+    script = stage_dir / "apply_update.ps1"
+    script.write_text(r"""
+param([string]$AppDir,[string]$SourceDir,[string]$ExePath,[int]$ProcessId,[string]$StageDir,[string]$LogPath)
+$ErrorActionPreference='Stop'
+function Log([string]$m) { Add-Content -LiteralPath $LogPath -Value ("[{0}] {1}" -f (Get-Date -Format o),$m) }
+try {
+ $id=[Security.Principal.WindowsIdentity]::GetCurrent()
+ $p=[Security.Principal.WindowsPrincipal]::new($id)
+ if (-not $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+  Log 'Requesting administrator permission (UAC).'
+  $a='-NoProfile -ExecutionPolicy Bypass -File "'+$PSCommandPath+'" -AppDir "'+$AppDir+'" -SourceDir "'+$SourceDir+'" -ExePath "'+$ExePath+'" -ProcessId '+$ProcessId+' -StageDir "'+$StageDir+'" -LogPath "'+$LogPath+'"'
+  Start-Process -FilePath 'powershell.exe' -Verb RunAs -ArgumentList $a
+  exit 0
+ }
+ Log 'Elevated updater started; waiting for Mixput to exit.'
+ try { Wait-Process -Id $ProcessId -Timeout 90 -ErrorAction Stop } catch {
+  if (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) { throw 'Timed out waiting for Mixput to exit.' }
+ }
+ if (-not (Test-Path -LiteralPath $SourceDir -PathType Container)) { throw 'Update source directory is missing.' }
+ if (-not (Test-Path -LiteralPath $AppDir -PathType Container)) { throw 'Application directory is missing.' }
+ $sourceExe=Join-Path $SourceDir 'mixput.exe'
+ if (-not (Test-Path -LiteralPath $sourceExe -PathType Leaf)) { throw 'Archive has no root-level mixput.exe.' }
+ Copy-Item -LiteralPath $sourceExe -Destination $ExePath -Force
+ if (-not (Test-Path -LiteralPath $ExePath -PathType Leaf)) { throw 'Updated executable was not installed.' }
+ Log 'Update copied. Starting updated Mixput.'
+ Start-Process -FilePath 'explorer.exe' -ArgumentList ('"'+$ExePath+'"')
+ Log 'Requested Explorer to launch updated Mixput in the user session.'
+} catch {
+ Log ('ERROR: '+$_.Exception.Message)
+ try { Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(('Mixput update failed: '+$_.Exception.Message+[Environment]::NewLine+'Log: '+$LogPath),'Mixput updater') | Out-Null } catch {}
+ exit 1
+}
+""", encoding="utf-8")
+    subprocess.Popen(["powershell.exe","-NoProfile","-ExecutionPolicy","Bypass","-File",str(script),
+        "-AppDir",str(app_dir),"-SourceDir",str(extracted_dir),"-ExePath",str(executable),
+        "-ProcessId",str(os.getpid()),"-StageDir",str(stage_dir),"-LogPath",str(log_path)],
+        creationflags=getattr(subprocess,"CREATE_NO_WINDOW",0), close_fds=True)
 
-def _apply_windows_update(
-    extracted_dir: Path,
-    app_dir: Path,
-    executable: Path,
-    stage_dir: Path,
-) -> None:
-    script_path = stage_dir / "apply_update.ps1"
-
-    script_path.write_text(
-        r"""
-            param(
-                [Parameter(Mandatory=$true)][string]$AppDir,
-                [Parameter(Mandatory=$true)][string]$SourceDir,
-                [Parameter(Mandatory=$true)][string]$ExePath,
-                [Parameter(Mandatory=$true)][int]$ProcessId,
-                [Parameter(Mandatory=$true)][string]$StageDir
-            )
-
-            $ErrorActionPreference = "Stop"
-
-            try {
-                Wait-Process -Id $ProcessId -ErrorAction SilentlyContinue
-
-                if (-not (Test-Path -LiteralPath $SourceDir -PathType Container)) {
-                    throw "Update source directory does not exist."
-                }
-
-                if (-not (Test-Path -LiteralPath $AppDir -PathType Container)) {
-                    throw "Application directory does not exist."
-                }
-
-                Copy-Item -Path (Join-Path $SourceDir '*') `
-                    -Destination $AppDir -Recurse -Force
-
-                if (-not (Test-Path -LiteralPath $ExePath -PathType Leaf)) {
-                    throw "Updated executable was not found."
-                }
-
-                Remove-Item -LiteralPath $StageDir -Recurse -Force
-                Start-Process -FilePath $ExePath -WorkingDirectory $AppDir
-            }
-            catch {
-                Write-Error $_
-                exit 1
-            }
-            """,
-        encoding="utf-8",
-    )
-
-    subprocess.Popen(
-        [
-            "powershell.exe",
-            "-NoProfile",
-            "-NonInteractive",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(script_path),
-            "-AppDir",
-            str(app_dir),
-            "-SourceDir",
-            str(extracted_dir),
-            "-ExePath",
-            str(executable),
-            "-ProcessId",
-            str(os.getpid()),
-            "-StageDir",
-            str(stage_dir),
-        ],
-        creationflags=(
-            getattr(subprocess, "CREATE_NO_WINDOW", 0)
-            | getattr(subprocess, "DETACHED_PROCESS", 0)
-        ),
-        close_fds=True,
-    )
-
-
-def _apply_linux_update(
-    extracted_dir: Path,
-    app_dir: Path,
-    executable: Path,
-    stage_dir: Path,
-) -> None:
+def _apply_linux_update(extracted_dir, app_dir, executable, stage_dir):
     import shlex
-
-    script_path = stage_dir / "apply_update.sh"
-
-    script_content = f"""#!/usr/bin/env bash
-set -e
-
-while kill -0 {os.getpid()} 2>/dev/null; do
-    sleep 1
-done
-
-cp -a {shlex.quote(str(extracted_dir))}/. {shlex.quote(str(app_dir))}/
-chmod +x {shlex.quote(str(executable))}
-
-rm -rf {shlex.quote(str(stage_dir))}
-
-nohup {shlex.quote(str(executable))} >/dev/null 2>&1 &
+    state = Path(os.environ.get("XDG_STATE_HOME", Path.home()/".local"/"state"))
+    log_dir = state/"mixput"/"logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir/"update.log"
+    q = shlex.quote
+    script_path = stage_dir/"apply_update.sh"
+    script = f"""#!/usr/bin/env bash
+set -Eeuo pipefail
+LOG={q(str(log_path))}
+log() {{ printf '[%s] %s\\n' "$(date --iso-8601=seconds)" "$*" >> "$LOG"; }}
+trap 'code=$?; log "ERROR at line $LINENO (exit $code)"' ERR
+log 'Updater started; waiting for Mixput to exit.'
+while kill -0 {os.getpid()} 2>/dev/null; do sleep 1; done
+SOURCE={q(str(extracted_dir))}/mixput
+if [[ ! -f "$SOURCE" ]]; then log 'ERROR: archive has no root-level mixput executable.'; exit 2; fi
+if [[ -w {q(str(app_dir))} && ( ! -e {q(str(executable))} || -w {q(str(executable))} ) ]]; then
+  install -m 755 "$SOURCE" {q(str(executable))}
+else
+  if ! command -v pkexec >/dev/null 2>&1; then log 'ERROR: this install directory needs administrator permission, but pkexec is unavailable.'; exit 5; fi
+  pkexec install -m 755 "$SOURCE" {q(str(executable))}
+fi
+if [[ ! -x {q(str(executable))} ]]; then log 'ERROR: updated executable is not executable.'; exit 3; fi
+log 'Update copied. Launching updated Mixput as the logged-in user.'
+nohup {q(str(executable))} >> "$LOG" 2>&1 < /dev/null &
+NEW_PID=$!
+sleep 2
+if ! kill -0 "$NEW_PID" 2>/dev/null; then log 'ERROR: Mixput exited immediately; inspect startup output above.'; exit 4; fi
+log "Updated Mixput started with PID $NEW_PID."
 """
-
-    script_path.write_text(script_content, encoding="utf-8")
-    script_path.chmod(0o755)
-
-    subprocess.Popen(
-        ["/bin/bash", str(script_path)],
-        start_new_session=True,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        close_fds=True,
+    script_path.write_text(script, encoding="utf-8")
+    script_path.chmod(0o700)
+    with log_path.open("a",encoding="utf-8") as stream: stream.write("\n--- update started ---\n")
+    needs_elevation = not os.access(app_dir, os.W_OK) or (
+        executable.exists() and not os.access(executable, os.W_OK)
     )
-
-
-def apply_update_and_restart(extracted_dir: Path) -> None:
-    """Apply a staged update after the current application exits."""
-    if not is_frozen():
-        raise RuntimeError(
-            "Automatic updates are only available in packaged installations."
+    if needs_elevation and not shutil.which("pkexec"):
+        raise PermissionError(
+            f"Mixput is installed in a protected directory ({app_dir}) and pkexec is unavailable. "
+            "Install Mixput in your home directory to enable automatic updates."
         )
+    subprocess.Popen(["/bin/bash", str(script_path)], start_new_session=True,
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL, close_fds=True)
 
-    extracted_dir = extracted_dir.resolve()
-
-    if not extracted_dir.is_dir():
-        raise ValueError("The extracted update directory does not exist.")
-
-    app_dir = get_app_dir()
-    executable = Path(sys.executable).resolve()
+def apply_update_and_restart(extracted_dir, progress_callback=None):
+    if not is_frozen(): raise RuntimeError("Automatic updates are only available in packaged installations.")
+    extracted_dir = Path(extracted_dir).resolve()
+    if not extracted_dir.is_dir(): raise ValueError("The extracted update directory does not exist.")
+    app_dir, executable = get_app_dir(), Path(sys.executable).resolve()
     stage_dir = extracted_dir.parent
-
-    if platform.system().lower() == "windows":
-        _apply_windows_update(
-            extracted_dir,
-            app_dir,
-            executable,
-            stage_dir,
-        )
-
-    elif platform.system().lower() == "linux":
-        _apply_linux_update(
-            extracted_dir,
-            app_dir,
-            executable,
-            stage_dir,
-        )
-
-    else:
-        raise RuntimeError("Automatic updates are not supported on this OS.")
-
+    _report(progress_callback,"install",0,0,"Preparing installer and restart helper…")
+    if platform.system().lower() == "windows": _apply_windows_update(extracted_dir,app_dir,executable,stage_dir)
+    elif platform.system().lower() == "linux": _apply_linux_update(extracted_dir,app_dir,executable,stage_dir)
+    else: raise RuntimeError("Automatic updates are not supported on this OS.")
+    _report(progress_callback,"restart",1,1,"Updater started. Mixput will close and reopen.")
     sys.exit(0)
+
+
+def get_update_log_path() -> Path:
+    if platform.system().lower() == "windows":
+        return Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Mixput" / "logs" / "update.log"
+    state = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local" / "state"))
+    return state / "mixput" / "logs" / "update.log"
+
+
+def consume_update_diagnostics() -> str | None:
+    """Return a failed update since the last successful app startup, then mark startup."""
+    log_path = get_update_log_path()
+    if not log_path.is_file():
+        return None
+    try:
+        lines = log_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        last_error = max((i for i, line in enumerate(lines) if ("ERROR:" in line.upper() or "ERROR AT LINE" in line.upper())), default=-1)
+        last_start = max((i for i, line in enumerate(lines) if "APPLICATION STARTED" in line), default=-1)
+        details = None
+        if last_error > last_start:
+            details = "\n".join(lines[max(0, last_error - 2): min(len(lines), last_error + 8)])
+        with log_path.open("a", encoding="utf-8") as stream:
+            stream.write(f"\n[{__import__('datetime').datetime.now().isoformat(timespec='seconds')}] APPLICATION STARTED\n")
+        return details
+    except OSError:
+        return None

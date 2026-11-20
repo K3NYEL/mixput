@@ -44,3 +44,14 @@ Automated tests cover encrypted transport, input protocol validation, pairing, a
 - Multi-monitor behavior and screen scaling.
 
 The edge handoff currently assumes a single-screen horizontal arrangement with the remote laptop to the right. Multi-monitor routing, vertical arrangements, Wayland portals, and seamless handling of differing display scaling are not implemented.
+
+## Automatic updates
+
+The updater displays download progress and reports the current phase: download, archive verification, extraction, installation, and restart. If an update fails, the current installation is left in place when possible and the next app launch displays the previous updater error.
+
+Detailed updater logs are saved at:
+
+- Windows: `%LOCALAPPDATA%\\Mixput\\logs\\update.log`
+- Linux: `~/.local/state/mixput/logs/update.log` (or `$XDG_STATE_HOME/mixput/logs/update.log` when configured)
+
+Windows installations in protected locations may request administrator approval through UAC. Linux installations in protected locations may request authorization through `pkexec`; per-user installations do not need elevation. If a restart does not happen, open the log above and check the last `ERROR` entry.
