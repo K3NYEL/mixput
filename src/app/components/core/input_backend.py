@@ -30,6 +30,8 @@ class InputBackend:
         self._edge_latched = False
         self._suppress_move = False
         self._relative_mode = False
+        self._exclusive_enabled = False
+        self._x11_grabber = None
 
     @staticmethod
     def availability():
@@ -40,8 +42,10 @@ class InputBackend:
             return False, "Wayland sessions are not supported yet. Select an X11 desktop session."
         try:
             import pynput  # noqa: F401
+            if system == "Linux":
+                from Xlib import X  # noqa: F401
         except Exception as error:
-            return False, f"Input support is unavailable: {error}"
+            return False, f"Native input capture is unavailable: {error}"
         return True, "Ready"
 
     def configure_edge_switch(self, side, screen_size, on_edge=None, margin=2):
@@ -56,6 +60,21 @@ class InputBackend:
         self._edge_margin = max(1, min(int(margin), 12))
         if on_edge is not None:
             self.on_edge = on_edge
+        if self._x11_grabber:
+            self._x11_grabber.configure_edges(self._edge_sides, self._screen_size, self._edge_margin)
+
+    def _on_x11_event(self, event):
+        with self._lock:
+            if not self._capture_enabled or not self._exclusive_enabled:
+                return
+        self.on_event(event)
+
+    def _on_x11_edge(self, side):
+        with self._lock:
+            if not self._capture_enabled or not self._exclusive_enabled or self._edge_latched:
+                return
+            self._edge_latched = True
+        self.on_edge(side)
 
     def _load(self):
         available, reason = self.availability()
@@ -72,6 +91,13 @@ class InputBackend:
                 return
             self._load()
             keyboard, mouse = self._pynput
+            if platform.system() == "Linux" and self._x11_grabber is None:
+                from app.components.core.x11_input_capture import X11GrabController
+                self._x11_grabber = X11GrabController(
+                    on_event=self._on_x11_event,
+                    on_edge=self._on_x11_edge,
+                    on_toggle_local=self.on_toggle_local,
+                )
 
             def is_enabled():
                 with self._lock:
@@ -102,7 +128,7 @@ class InputBackend:
                     return
                 with self._lock:
                     chord_held = self._hotkey_latched
-                if chord_held or not is_enabled():
+                if chord_held or not is_enabled() or not self._exclusive_enabled:
                     return
                 if value:
                     self.on_event({"type": kind, "key": value})
@@ -124,32 +150,50 @@ class InputBackend:
                         self._edge_latched = True
                         self.on_edge(side)
                         return
-                if previous is not None:
+                if previous is not None and self._exclusive_enabled:
                     dx, dy = position[0] - previous[0], position[1] - previous[1]
                     if dx or dy:
                         self.on_event({"type": "mouse_move", "dx": dx, "dy": dy})
                     if self._relative_mode and self._screen_size:
+                        # Keep the source cursor parked while forwarding relative motion.
+                        # This is cursor confinement, not OS-level input suppression:
+                        # the native backend must still intercept clicks and key presses.
                         width, height = self._screen_size
-                        if position[0] <= 1 or position[0] >= width - 2 or position[1] <= 1 or position[1] >= height - 2:
-                            center = (max(2, width // 2), max(2, height // 2))
-                            self._suppress_move = True
-                            if self._controller is None:
-                                from pynput import keyboard
-                                self._controller = (keyboard.Controller(), mouse.Controller())
-                            self._controller[1].position = center
-                            self._last_position = center
+                        center = (max(2, width // 2), max(2, height // 2))
+                        self._suppress_move = True
+                        if self._controller is None:
+                            from pynput import keyboard
+                            self._controller = (keyboard.Controller(), mouse.Controller())
+                        self._controller[1].position = center
+                        self._last_position = center
 
             def on_click(x, y, button, pressed):
-                if is_enabled():
+                if is_enabled() and self._exclusive_enabled:
                     self.on_event({"type": "mouse_button", "button": str(button).replace("Button.", ""), "pressed": bool(pressed)})
 
             def on_scroll(x, y, dx, dy):
-                if is_enabled():
+                if is_enabled() and self._exclusive_enabled:
                     self.on_event({"type": "mouse_scroll", "dx": int(dx), "dy": int(dy)})
 
-            self._keyboard_listener = keyboard.Listener(on_press=lambda key: key_event("key_down", key),
-                                                        on_release=lambda key: key_event("key_up", key))
-            self._mouse_listener = mouse.Listener(on_move=on_move, on_click=on_click, on_scroll=on_scroll)
+            def windows_filter(listener):
+                if self._capture_enabled and self._exclusive_enabled:
+                    listener.suppress_event()
+                return True
+
+            keyboard_options = {}
+            mouse_options = {}
+            if platform.system() == "Windows":
+                keyboard_options["win32_event_filter"] = lambda _msg, _data: windows_filter(self._keyboard_listener)
+                mouse_options["win32_event_filter"] = lambda _msg, _data: windows_filter(self._mouse_listener)
+            self._keyboard_listener = keyboard.Listener(
+                on_press=lambda key: key_event("key_down", key),
+                on_release=lambda key: key_event("key_up", key),
+                **keyboard_options,
+            )
+            self._mouse_listener = mouse.Listener(
+                on_move=on_move, on_click=on_click, on_scroll=on_scroll,
+                **mouse_options,
+            )
             self._capture_enabled = True
             self._edge_latched = False
             self._keyboard_listener.start()
@@ -160,6 +204,21 @@ class InputBackend:
             self._capture_enabled = bool(enabled)
             self._edge_latched = False
             self._last_position = None
+            if not self._capture_enabled:
+                self._exclusive_enabled = False
+                if self._x11_grabber:
+                    self._x11_grabber.set_grab(False)
+
+    def set_exclusive_capture(self, enabled):
+        with self._lock:
+            requested = bool(enabled and self._capture_enabled)
+            if self._x11_grabber and not self._x11_grabber.set_grab(requested):
+                self._exclusive_enabled = False
+                return False
+            self._exclusive_enabled = requested
+            if self._x11_grabber:
+                self._x11_grabber.configure_edges(self._edge_sides, self._screen_size, self._edge_margin)
+            return True
 
     def set_relative_mode(self, enabled):
         with self._lock:
@@ -209,6 +268,9 @@ class InputBackend:
             self._keyboard_listener = None
             self._mouse_listener = None
             self._capture_enabled = False
+            self._exclusive_enabled = False
+            if self._x11_grabber:
+                self._x11_grabber.set_grab(False)
             self._last_position = None
         for listener in listeners:
             if listener:
@@ -302,4 +364,8 @@ class InputBackend:
     def close(self):
         self.stop_capture()
         self.release_all()
+        if self._x11_grabber:
+            self._x11_grabber.close()
+            self._x11_grabber = None
+        self._exclusive_enabled = False
         self._controller = None

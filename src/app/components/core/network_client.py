@@ -30,6 +30,8 @@ class NetworkClient:
         self._thread = None
         self._lock = threading.RLock()
         self._control_owner = "host"
+        self._ownership_epoch = -1
+        self._last_input_sequence = 0
         self._local_mode = False
         self._device_id = self.pairings.device_id
         self._index = 1
@@ -97,7 +99,10 @@ class NetworkClient:
         if channel is None:
             return
         try:
-            channel.send({"version": PROTOCOL_VERSION, "kind": "control_switch", "side": side})
+            channel.send({
+                "version": PROTOCOL_VERSION, "kind": "control_switch",
+                "side": side, "ownership_epoch": self._ownership_epoch,
+            })
         except (OSError, ProtocolError, ValueError) as error:
             self.on_message(f"[Mixput] Could not switch device: {error}")
 
@@ -141,6 +146,13 @@ class NetworkClient:
         devices, owner = message.get("devices"), message.get("owner")
         if not isinstance(devices, list) or not 2 <= len(devices) <= 4 or not isinstance(owner, str):
             raise ProtocolError("Invalid server topology.")
+        epoch = message.get("ownership_epoch")
+        if not isinstance(epoch, int) or isinstance(epoch, bool) or epoch < 0:
+            raise ProtocolError("The server provided an invalid ownership epoch.")
+        with self._lock:
+            if epoch < self._ownership_epoch:
+                return False
+            previous_epoch = self._ownership_epoch
         network_cidr = message.get("virtual_network")
         try:
             virtual_network = ipaddress.ip_network(network_cidr, strict=True)
@@ -162,6 +174,9 @@ class NetworkClient:
             virtual_addresses.append(str(virtual_address))
         if len(set(virtual_addresses)) != len(virtual_addresses):
             raise ProtocolError("The server assigned duplicate Mixput virtual IP addresses.")
+        valid_owners = {device.get("id") for device in devices}
+        if owner not in valid_owners:
+            raise ProtocolError("The server selected an unknown input owner.")
         own = next((d for d in devices if isinstance(d, dict) and d.get("id") == self._device_id), None)
         if own is None:
             raise ProtocolError("This device is missing from the server topology.")
@@ -172,6 +187,9 @@ class NetworkClient:
             self._virtual_ip = str(own["virtual_ip"])
             self._virtual_network = str(virtual_network)
             self._control_owner = owner
+            self._ownership_epoch = epoch
+            if epoch != previous_epoch:
+                self._last_input_sequence = 0
             active = owner == self._device_id
         if self.input_backend:
             if old_owner == self._device_id and not active:
@@ -185,7 +203,29 @@ class NetworkClient:
             "local_mode": self.local_mode,
             "virtual_ip": self.virtual_ip,
             "virtual_network": self._virtual_network,
+            "ownership_epoch": self._ownership_epoch,
         })
+        return True
+
+    def _apply_remote_input(self, message):
+        with self._lock:
+            valid = (
+                not self._local_mode
+                and self._control_owner == self._device_id
+                and message.get("target_id") == self._device_id
+                and message.get("source_id") == "host"
+                and message.get("ownership_epoch") == self._ownership_epoch
+                and isinstance(message.get("sequence"), int)
+                and not isinstance(message.get("sequence"), bool)
+                and message["sequence"] > self._last_input_sequence
+            )
+            if not valid:
+                return False
+            self._last_input_sequence = message["sequence"]
+        event = message.get("event")
+        if not isinstance(event, dict) or event.get("type") not in EVENT_TYPES or not self.input_backend:
+            return False
+        return bool(self.input_backend.apply_event(event))
 
     def _run(self, host, port):
         channel = None
@@ -233,12 +273,8 @@ class NetworkClient:
                 if kind == "session_state":
                     self._apply_session_state(message)
                 elif kind == "input":
-                    event = message.get("event")
-                    if self.local_mode:
-                        continue
-                    if isinstance(event, dict) and event.get("type") in EVENT_TYPES and self.input_backend:
-                        if not self.input_backend.apply_event(event):
-                            self.on_message("[Mixput] An input event could not be applied.")
+                    if not self._apply_remote_input(message):
+                        self.on_message("[Mixput] Rejected stale, unauthorized, or invalid input event.")
                 elif kind == "chat":
                     sender, text = message.get("sender"), message.get("text")
                     if isinstance(sender, str) and isinstance(text, str) and len(text) <= MAX_CHAT_LENGTH:
@@ -252,6 +288,8 @@ class NetworkClient:
             self.running = False
             with self._lock:
                 self._control_owner = "host"
+                self._ownership_epoch = -1
+                self._last_input_sequence = 0
                 self._devices = []
                 self._virtual_ip = None
                 self._virtual_network = None

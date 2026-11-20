@@ -17,6 +17,7 @@ class RecordingInputBackend:
         self.events = []
         self.event_received = threading.Event()
         self.capture_enabled = False
+        self.exclusive_enabled = False
 
     def start_capture(self):
         self.started.set()
@@ -29,6 +30,10 @@ class RecordingInputBackend:
 
     def set_relative_mode(self, enabled):
         self.relative_mode = bool(enabled)
+
+    def set_exclusive_capture(self, enabled):
+        self.exclusive_enabled = bool(enabled)
+        return True
 
     def park_cursor(self):
         self.parked = True
@@ -130,6 +135,19 @@ class NetworkIntegrationTests(unittest.TestCase):
         self.server._send_input(event)
         self._wait(self.receiver_backend.event_received, "forwarded input event")
         self.assertEqual(self.receiver_backend.events, [event])
+        self.assertEqual(self.client._ownership_epoch, self.server._ownership_epoch)
+        duplicate = {
+            "source_id": "host", "target_id": self.client.pairings.device_id,
+            "ownership_epoch": self.client._ownership_epoch,
+            "sequence": 1, "event": event,
+        }
+        self.assertFalse(self.client._apply_remote_input(duplicate))
+        self.assertFalse(self.client._apply_remote_input({
+            **duplicate,
+            "ownership_epoch": self.client._ownership_epoch - 1,
+            "sequence": 999,
+        }))
+        self.assertEqual(self.receiver_backend.events, [event])
 
     def test_edge_handoff_is_bidirectional_and_routes_remote_input(self):
         self._start_server()
@@ -158,6 +176,7 @@ class NetworkIntegrationTests(unittest.TestCase):
         while self.server._control_owner != "host" and time.monotonic() < deadline:
             time.sleep(0.01)
         self.assertEqual(self.server._control_owner, "host")
+        self.assertGreaterEqual(self.server._ownership_epoch, 2)
         self.assertTrue(self.host_backend.capture_enabled)
         self.assertFalse(self.receiver_backend.capture_enabled)
 
@@ -169,6 +188,7 @@ class NetworkIntegrationTests(unittest.TestCase):
 
         self.assertTrue(self.server.set_local_mode(True))
         self.assertTrue(self.server.local_mode)
+        self.assertFalse(self.host_backend.exclusive_enabled)
         self.assertFalse(self.client.local_mode)
         self.assertTrue(self.client.running)
         self.assertTrue(self.server.running)
@@ -186,6 +206,7 @@ class NetworkIntegrationTests(unittest.TestCase):
         self.assertEqual(self.receiver_backend.events, [])
 
         self.assertTrue(self.client.set_local_mode(False))
+        self.assertTrue(self.host_backend.exclusive_enabled)
         self.server._send_input({"type": "key_down", "key": "b"})
         self._wait(self.receiver_backend.event_received, "input after returning to shared mode")
         self.assertEqual(self.receiver_backend.events, [{"type": "key_down", "key": "b"}])
