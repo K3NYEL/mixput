@@ -212,6 +212,10 @@ class ServerPreferences(tk.Frame):
         self.stop_button.configure(state=tk.DISABLED)
 
     def connect_client(self):
+        available, reason = InputBackend.availability()
+        if not available:
+            messagebox.showerror("Input support unavailable", reason, parent=self)
+            return
         host = self.client_host.get().strip()
         key = self.client_key.get().strip()
         try:
