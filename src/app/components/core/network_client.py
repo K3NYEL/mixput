@@ -49,14 +49,8 @@ class NetworkClient:
         return True
 
     def _send_input(self, event):
-        with self._lock:
-            channel = self._channel
-            allowed = self._control_owner == self._device_id
-        if channel and allowed and isinstance(event, dict) and event.get("type") in EVENT_TYPES:
-            try:
-                channel.send({"version": PROTOCOL_VERSION, "kind": "input", "event": event})
-            except (OSError, ProtocolError, ValueError) as error:
-                self.on_message(f"[Mixput] Could not transmit input: {error}")
+        # Clients are receivers only; the host is the sole physical input source.
+        return
 
     def _on_local_edge(self, side):
         with self._lock:
@@ -132,10 +126,11 @@ class NetworkClient:
         if self.input_backend:
             if old_owner == self._device_id and not active:
                 self.input_backend.release_all()
-            self.input_backend.set_capture_enabled(active)
+            self.input_backend.set_capture_enabled(False)
+            self.input_backend.set_relative_mode(False)
+            if active and old_owner != self._device_id:
+                self.input_backend.warp_to_edge(message.get("enter_edge") or "left")
         self.on_session({"devices": devices, "owner": owner, "index": self._index})
-        if active and old_owner != self._device_id and self.input_backend:
-            self.input_backend.warp_to_edge("left" if self._index > 0 else "right")
 
     def _run(self, host, port):
         channel = None
@@ -167,6 +162,7 @@ class NetworkClient:
             if self.input_backend:
                 self.input_backend.start_capture()
                 self.input_backend.set_capture_enabled(False)
+                self.input_backend.set_relative_mode(False)
             self.on_status("connected")
             self.on_message(f"[Mixput] Connected to Mixput server at {host}.")
             while self.running:

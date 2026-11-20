@@ -27,6 +27,13 @@ class RecordingInputBackend:
     def set_capture_enabled(self, enabled):
         self.capture_enabled = bool(enabled)
 
+    def set_relative_mode(self, enabled):
+        self.relative_mode = bool(enabled)
+
+    def park_cursor(self):
+        self.parked = True
+        return True
+
     def warp_to_edge(self, side):
         self.warped_to = side
         return True
@@ -110,6 +117,7 @@ class NetworkIntegrationTests(unittest.TestCase):
         self.assertTrue(authorized[0]["name"])
         self.assertTrue(self.client.pairings.get_host("127.0.0.1", self.port))
 
+        self.server._set_owner(self.client.pairings.device_id, "left")
         event = {"type": "mouse_move", "dx": 12, "dy": -4}
         self.server._send_input(event)
         self._wait(self.receiver_backend.event_received, "forwarded input event")

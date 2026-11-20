@@ -26,6 +26,7 @@ class InputBackend:
         self._edge_margin = 2
         self._edge_latched = False
         self._suppress_move = False
+        self._relative_mode = False
 
     @staticmethod
     def availability():
@@ -98,14 +99,22 @@ class InputBackend:
                         "left" if "left" in self._edge_sides and position[0] <= self._edge_margin - 1 else None)
                     if side and 0 <= position[1] < height:
                         self._edge_latched = True
-                        with self._lock:
-                            self._capture_enabled = False
                         self.on_edge(side)
                         return
                 if previous is not None:
                     dx, dy = position[0] - previous[0], position[1] - previous[1]
                     if dx or dy:
                         self.on_event({"type": "mouse_move", "dx": dx, "dy": dy})
+                    if self._relative_mode and self._screen_size:
+                        width, height = self._screen_size
+                        if position[0] <= 1 or position[0] >= width - 2 or position[1] <= 1 or position[1] >= height - 2:
+                            center = (max(2, width // 2), max(2, height // 2))
+                            self._suppress_move = True
+                            if self._controller is None:
+                                from pynput import keyboard
+                                self._controller = (keyboard.Controller(), mouse.Controller())
+                            self._controller[1].position = center
+                            self._last_position = center
 
             def on_click(x, y, button, pressed):
                 if is_enabled():
@@ -129,6 +138,28 @@ class InputBackend:
             self._edge_latched = False
             self._last_position = None
 
+    def set_relative_mode(self, enabled):
+        with self._lock:
+            self._relative_mode = bool(enabled)
+            self._last_position = None
+
+    def park_cursor(self):
+        try:
+            if self._pynput is None:
+                self._load()
+            _, mouse = self._pynput
+            if self._controller is None:
+                from pynput import keyboard
+                self._controller = (keyboard.Controller(), mouse.Controller())
+            width, height = self._screen_size or (1920, 1080)
+            position = (max(2, width // 2), max(2, height // 2))
+            self._suppress_move = True
+            self._controller[1].position = position
+            self._last_position = position
+            return True
+        except (InputBackendError, OSError, ValueError, TypeError):
+            return False
+
     def warp_to_edge(self, side):
         if side not in ("left", "right"):
             return False
@@ -144,6 +175,7 @@ class InputBackend:
             self._suppress_move = True
             self._controller[1].position = (x, max(1, height // 2))
             self._last_position = (x, max(1, height // 2))
+            self._edge_latched = False
             return True
         except (InputBackendError, OSError, ValueError, TypeError):
             return False
@@ -191,7 +223,21 @@ class InputBackend:
                 if abs(dx) > 2000 or abs(dy) > 2000:
                     return False
                 x, y = mouse_controller.position
-                mouse_controller.position = (x + dx, y + dy)
+                next_x, next_y = x + dx, y + dy
+                mouse_controller.position = (next_x, next_y)
+                if self._edge_sides and self._screen_size and not self._edge_latched:
+                    width, height = self._screen_size
+                    side = "right" if "right" in self._edge_sides and next_x >= width - self._edge_margin else (
+                        "left" if "left" in self._edge_sides and next_x <= self._edge_margin - 1 else None)
+                    if side and 0 <= next_y < height:
+                        self._edge_latched = True
+                        self.on_edge(side)
+                elif self._relative_mode and self._screen_size:
+                    width, height = self._screen_size
+                    if next_x <= 1 or next_x >= width - 2 or next_y <= 1 or next_y >= height - 2:
+                        center = (max(2, width // 2), max(2, height // 2))
+                        self._suppress_move = True
+                        mouse_controller.position = center
             elif kind == "mouse_button":
                 button = getattr(mouse.Button, event.get("button"), None)
                 if button is None:
