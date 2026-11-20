@@ -38,15 +38,17 @@ class SecureChannelTests(unittest.TestCase):
         self.assertEqual({item["index"] for item in received}, set(range(40)))
 
     def test_wrong_pairing_key_is_rejected(self):
+        self.left.close()
         self.right.close()
-        self.right_socket = socket.socketpair()[1]
-        wrong_key = Fernet.generate_key()
-        wrong_peer = SecureChannel(self.right_socket, wrong_key)
+        left_socket, right_socket = socket.socketpair()
+        sender = SecureChannel(left_socket, self.key)
+        wrong_peer = SecureChannel(right_socket, Fernet.generate_key())
         try:
-            self.left.send({"version": 1, "kind": "hello"})
+            sender.send({"version": 1, "kind": "hello"})
             with self.assertRaises(ProtocolError):
                 wrong_peer.receive()
         finally:
+            sender.close()
             wrong_peer.close()
 
 
