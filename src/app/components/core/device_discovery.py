@@ -9,7 +9,6 @@ import uuid
 
 import psutil
 
-
 DISCOVERY_PORT = 45821
 DISCOVERY_INTERVAL = 2.0
 PEER_TIMEOUT = 8.0
@@ -31,12 +30,16 @@ def _broadcast_addresses():
             try:
                 address = ipaddress.IPv4Address(entry.address)
                 mask = ipaddress.IPv4Address(entry.netmask)
-                if address.is_loopback or address.is_link_local or address.is_unspecified:
+                if (
+                    address.is_loopback
+                    or address.is_link_local
+                    or address.is_unspecified
+                ):
                     continue
-                network = ipaddress.IPv4Network((address, mask), strict=False)
+                network = ipaddress.IPv4Network(f"{address}/{mask}", strict=False)
                 if network.prefixlen < 31:
                     targets.add(str(network.broadcast_address))
-            except (ipaddress.AddressValueError, ipaddress.NetmaskValueError):
+            except ipaddress.AddressValueError, ipaddress.NetmaskValueError:
                 continue
     return targets
 
@@ -78,15 +81,18 @@ class DeviceDiscovery:
         with self._lock:
             port = self.tcp_port
             sharing = self.sharing
-        return json.dumps({
-            "app": "mixput",
-            "protocol": PROTOCOL_VERSION,
-            "type": "announce",
-            "device_id": self.device_id,
-            "name": self.device_name,
-            "port": port,
-            "sharing": sharing,
-        }, separators=(",", ":")).encode("utf-8")
+        return json.dumps(
+            {
+                "app": "mixput",
+                "protocol": PROTOCOL_VERSION,
+                "type": "announce",
+                "device_id": self.device_id,
+                "name": self.device_name,
+                "port": port,
+                "sharing": sharing,
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
 
     def _run(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -122,7 +128,8 @@ class DeviceDiscovery:
 
                 now = time.monotonic()
                 expired = [
-                    device_id for device_id, peer in self._peers.items()
+                    device_id
+                    for device_id, peer in self._peers.items()
                     if now - peer["last_seen"] > PEER_TIMEOUT
                 ]
                 for device_id in expired:
@@ -145,25 +152,32 @@ class DeviceDiscovery:
     def _accept_packet(self, payload, source_ip):
         try:
             message = json.loads(payload.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
+        except UnicodeDecodeError, json.JSONDecodeError:
             return
         if not isinstance(message, dict):
             return
-        if (message.get("app") != "mixput"
-                or message.get("protocol") != PROTOCOL_VERSION
-                or message.get("type") != "announce"):
+        if (
+            message.get("app") != "mixput"
+            or message.get("protocol") != PROTOCOL_VERSION
+            or message.get("type") != "announce"
+        ):
             return
 
         device_id = message.get("device_id")
         name = message.get("name")
         port = message.get("port")
         sharing = message.get("sharing")
-        if (not isinstance(device_id, str) or len(device_id) != 32
-                or device_id == self.device_id
-                or not isinstance(name, str) or not name
-                or not isinstance(port, int) or isinstance(port, bool)
-                or not 1 <= port <= 65535
-                or not isinstance(sharing, bool)):
+        if (
+            not isinstance(device_id, str)
+            or len(device_id) != 32
+            or device_id == self.device_id
+            or not isinstance(name, str)
+            or not name
+            or not isinstance(port, int)
+            or isinstance(port, bool)
+            or not 1 <= port <= 65535
+            or not isinstance(sharing, bool)
+        ):
             return
 
         try:
@@ -185,13 +199,15 @@ class DeviceDiscovery:
     def _publish(self):
         devices = []
         for peer in self._peers.values():
-            devices.append({
-                "id": peer["id"],
-                "name": peer["name"],
-                "ip": peer["ip"],
-                "port": peer["port"],
-                "sharing": peer["sharing"],
-            })
+            devices.append(
+                {
+                    "id": peer["id"],
+                    "name": peer["name"],
+                    "ip": peer["ip"],
+                    "port": peer["port"],
+                    "sharing": peer["sharing"],
+                }
+            )
         devices.sort(key=lambda item: (not item["sharing"], item["name"].lower()))
         try:
             self.on_devices(devices)
