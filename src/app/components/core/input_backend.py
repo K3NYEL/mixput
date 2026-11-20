@@ -60,6 +60,21 @@ class InputBackend:
         self._edge_margin = max(1, min(int(margin), 12))
         if on_edge is not None:
             self.on_edge = on_edge
+        if self._x11_grabber:
+            self._x11_grabber.configure_edges(self._edge_sides, self._screen_size, self._edge_margin)
+
+    def _on_x11_event(self, event):
+        with self._lock:
+            if not self._capture_enabled or not self._exclusive_enabled:
+                return
+        self.on_event(event)
+
+    def _on_x11_edge(self, side):
+        with self._lock:
+            if not self._capture_enabled or not self._exclusive_enabled or self._edge_latched:
+                return
+            self._edge_latched = True
+        self.on_edge(side)
 
     def _load(self):
         available, reason = self.availability()
@@ -78,7 +93,11 @@ class InputBackend:
             keyboard, mouse = self._pynput
             if platform.system() == "Linux" and self._x11_grabber is None:
                 from app.components.core.x11_input_capture import X11GrabController
-                self._x11_grabber = X11GrabController()
+                self._x11_grabber = X11GrabController(
+                    on_event=self._on_x11_event,
+                    on_edge=self._on_x11_edge,
+                    on_toggle_local=self.on_toggle_local,
+                )
 
             def is_enabled():
                 with self._lock:
@@ -197,6 +216,8 @@ class InputBackend:
                 self._exclusive_enabled = False
                 return False
             self._exclusive_enabled = requested
+            if self._x11_grabber:
+                self._x11_grabber.configure_edges(self._edge_sides, self._screen_size, self._edge_margin)
             return True
 
     def set_relative_mode(self, enabled):
