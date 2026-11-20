@@ -105,6 +105,7 @@ class NetworkServer:
             self._local_mode = enabled
         if self._capture:
             self._capture.release_all()
+            self._capture.set_exclusive_capture(not enabled and self._control_owner != "host")
             if not enabled and self._control_owner != "host":
                 self._capture.park_cursor()
         self.on_log(f"[Mixput] Local mode {'enabled' if enabled else 'disabled'}.")
@@ -166,6 +167,7 @@ class NetworkServer:
             devices = self._device_snapshot_locked()
         if self._capture:
             self._capture.release_all()
+            self._capture.set_exclusive_capture(device_id != "host" and not self.local_mode)
             self._capture.set_relative_mode(device_id != "host")
             if device_id == "host" and enter_edge:
                 self._capture.warp_to_edge(enter_edge)
@@ -205,11 +207,11 @@ class NetworkServer:
             epoch = self._ownership_epoch
             peer = self._peers.get(target_id)
         if target_id == "host" or peer is None:
-            return
+            return False
         try:
             with self._lock:
                 if self._control_owner != target_id or self._ownership_epoch != epoch:
-                    return
+                    return False
                 self._input_sequence = getattr(self, "_input_sequence", 0) + 1
                 sequence = self._input_sequence
             peer["channel"].send({
@@ -217,8 +219,10 @@ class NetworkServer:
                 "source_id": "host", "target_id": target_id,
                 "ownership_epoch": epoch, "sequence": sequence, "event": event,
             })
+            return True
         except (OSError, ProtocolError, ValueError) as error:
             self.on_log(f"[Mixput] Could not transmit input: {error}")
+            return False
 
     def send_chat(self, text):
         if not isinstance(text, str):
@@ -474,7 +478,9 @@ class NetworkServer:
                     if self._peers:
                         self._capture.set_capture_enabled(True)
                         self._capture.set_relative_mode(self._control_owner != "host")
+                        self._capture.set_exclusive_capture(self._control_owner != "host" and not self.local_mode)
                     else:
+                        self._capture.set_exclusive_capture(False)
                         self._capture.set_relative_mode(False)
                         self._capture.stop_capture()
                 self._notify_devices()
@@ -496,6 +502,7 @@ class NetworkServer:
         for peer in peers:
             peer["channel"].close()
         if self._capture:
+            self._capture.set_exclusive_capture(False)
             self._capture.set_relative_mode(False)
             self._capture.stop_capture()
             self._capture.release_all()
