@@ -249,6 +249,7 @@ class NetworkServer:
                         if not self._capture.apply_event(event):
                             self.on_log("[Mixput] A remote input event could not be applied.")
                 elif kind == "control_switch" and message.get("owner") == "host":
+                    self._capture.release_all()
                     with self._lock:
                         self._control_owner = "host"
                     self._capture.set_capture_enabled(True)
