@@ -375,7 +375,10 @@ class NetworkServer:
             if removed:
                 if self._capture:
                     self._capture.release_all()
-                    self._capture.set_capture_enabled(self._control_owner == "host")
+                    if self._peers:
+                        self._capture.set_capture_enabled(self._control_owner == "host")
+                    else:
+                        self._capture.stop_capture()
                 self._notify_devices()
                 self.on_log("[Mixput] A device disconnected.")
             if self.running:

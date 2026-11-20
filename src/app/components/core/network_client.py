@@ -64,8 +64,14 @@ class NetworkClient:
                 return
             target = self._index + (1 if side == "right" else -1)
             if not any(d.get("index") == target for d in self._devices):
-                return
-            channel = self._channel
+                channel = None
+            else:
+                channel = self._channel
+        if channel is None:
+            if self.input_backend:
+                self.input_backend.warp_to_edge(side)
+                self.input_backend.set_capture_enabled(True)
+            return
         if self.input_backend:
             self.input_backend.set_capture_enabled(False)
             self.input_backend.release_all()
