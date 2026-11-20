@@ -128,8 +128,8 @@ try {
  Copy-Item -LiteralPath $sourceExe -Destination $ExePath -Force
  if (-not (Test-Path -LiteralPath $ExePath -PathType Leaf)) { throw 'Updated executable was not installed.' }
  Log 'Update copied. Starting updated Mixput.'
- Start-Process -FilePath $ExePath -WorkingDirectory $AppDir
- Log 'Updated Mixput process launched.'
+ Start-Process -FilePath 'explorer.exe' -ArgumentList ('"'+$ExePath+'"')
+ Log 'Requested Explorer to launch updated Mixput in the user session.'
 } catch {
  Log ('ERROR: '+$_.Exception.Message)
  try { Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(('Mixput update failed: '+$_.Exception.Message+[Environment]::NewLine+'Log: '+$LogPath),'Mixput updater') | Out-Null } catch {}
@@ -158,9 +158,14 @@ log 'Updater started; waiting for Mixput to exit.'
 while kill -0 {os.getpid()} 2>/dev/null; do sleep 1; done
 SOURCE={q(str(extracted_dir))}/mixput
 if [[ ! -f "$SOURCE" ]]; then log 'ERROR: archive has no root-level mixput executable.'; exit 2; fi
-install -m 755 "$SOURCE" {q(str(executable))}
+if [[ -w {q(str(app_dir))} && ( ! -e {q(str(executable))} || -w {q(str(executable))} ) ]]; then
+  install -m 755 "$SOURCE" {q(str(executable))}
+else
+  if ! command -v pkexec >/dev/null 2>&1; then log 'ERROR: this install directory needs administrator permission, but pkexec is unavailable.'; exit 5; fi
+  pkexec install -m 755 "$SOURCE" {q(str(executable))}
+fi
 if [[ ! -x {q(str(executable))} ]]; then log 'ERROR: updated executable is not executable.'; exit 3; fi
-log 'Update copied. Launching updated Mixput.'
+log 'Update copied. Launching updated Mixput as the logged-in user.'
 nohup {q(str(executable))} >> "$LOG" 2>&1 < /dev/null &
 NEW_PID=$!
 sleep 2
@@ -170,20 +175,17 @@ log "Updated Mixput started with PID $NEW_PID."
     script_path.write_text(script, encoding="utf-8")
     script_path.chmod(0o700)
     with log_path.open("a",encoding="utf-8") as stream: stream.write("\n--- update started ---\n")
-    command = ["/bin/bash", str(script_path)]
     needs_elevation = not os.access(app_dir, os.W_OK) or (
         executable.exists() and not os.access(executable, os.W_OK)
     )
-    if needs_elevation:
-        pkexec = shutil.which("pkexec")
-        if not pkexec:
-            raise PermissionError(
-                f"Mixput is installed in a protected directory ({app_dir}). "
-                "Install it in your home directory or install pkexec to allow an authorized update."
-            )
-        command = [pkexec, *command]
-    subprocess.Popen(command, start_new_session=True, stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+    if needs_elevation and not shutil.which("pkexec"):
+        raise PermissionError(
+            f"Mixput is installed in a protected directory ({app_dir}) and pkexec is unavailable. "
+            "Install Mixput in your home directory to enable automatic updates."
+        )
+    subprocess.Popen(["/bin/bash", str(script_path)], start_new_session=True,
+        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL, close_fds=True)
 
 def apply_update_and_restart(extracted_dir, progress_callback=None):
     if not is_frozen(): raise RuntimeError("Automatic updates are only available in packaged installations.")
