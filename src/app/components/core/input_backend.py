@@ -1,9 +1,4 @@
-"""Cross-platform local input capture and playback for Mixput.
-
-Input capture is only started after the user explicitly enables a sharing session.
-Linux currently requires an X11-compatible display; Wayland support depends on
-desktop portal APIs and is intentionally reported as unavailable.
-"""
+"""Cross-platform input capture and playback for explicit Mixput sessions."""
 import os
 import platform
 import threading
@@ -21,6 +16,8 @@ class InputBackend:
         self._controller = None
         self._pynput = None
         self._last_position = None
+        self._pressed_keys = set()
+        self._pressed_buttons = set()
         self._lock = threading.RLock()
 
     @staticmethod
@@ -28,8 +25,8 @@ class InputBackend:
         system = platform.system()
         if system not in ("Windows", "Linux"):
             return False, f"{system} is not supported."
-        if system == "Linux" and os.environ.get("WAYLAND_DISPLAY") and not os.environ.get("DISPLAY"):
-            return False, "Wayland-only sessions are not supported yet. Use an X11 session."
+        if system == "Linux" and os.environ.get("WAYLAND_DISPLAY") and os.environ.get("XDG_SESSION_TYPE", "").lower() != "x11":
+            return False, "Wayland sessions are not supported yet. Select an X11 desktop session."
         try:
             import pynput  # noqa: F401
         except Exception as error:
@@ -44,7 +41,7 @@ class InputBackend:
         self._pynput = (keyboard, mouse)
 
     def start_capture(self):
-        """Capture local input events for an explicitly started host session."""
+        """Capture local input only after a peer has authenticated."""
         with self._lock:
             if self._keyboard_listener or self._mouse_listener:
                 return
@@ -78,15 +75,17 @@ class InputBackend:
             def on_scroll(x, y, dx, dy):
                 self.on_event({"type": "mouse_scroll", "dx": int(dx), "dy": int(dy)})
 
-            self._keyboard_listener = keyboard.Listener(
+            keyboard_listener = keyboard.Listener(
                 on_press=lambda key: key_event("key_down", key),
                 on_release=lambda key: key_event("key_up", key),
             )
-            self._mouse_listener = mouse.Listener(
+            mouse_listener = mouse.Listener(
                 on_move=on_move, on_click=on_click, on_scroll=on_scroll
             )
-            self._keyboard_listener.start()
-            self._mouse_listener.start()
+            self._keyboard_listener = keyboard_listener
+            self._mouse_listener = mouse_listener
+            keyboard_listener.start()
+            mouse_listener.start()
 
     def stop_capture(self):
         with self._lock:
@@ -99,7 +98,7 @@ class InputBackend:
                 listener.stop()
 
     def apply_event(self, event):
-        """Apply one validated input event received from a paired Mixput peer."""
+        """Apply one event received through the authenticated Mixput channel."""
         if not isinstance(event, dict):
             return False
         kind = event.get("type")
@@ -113,14 +112,19 @@ class InputBackend:
 
             if kind in ("key_down", "key_up"):
                 key_name = event.get("key")
-                if not isinstance(key_name, str) or len(key_name) > 32:
+                if not isinstance(key_name, str) or not 0 < len(key_name) <= 32:
                     return False
                 key = getattr(keyboard.Key, key_name, None)
                 if key is None:
                     if len(key_name) != 1:
                         return False
                     key = key_name
-                (key_controller.press if kind == "key_down" else key_controller.release)(key)
+                if kind == "key_down":
+                    key_controller.press(key)
+                    self._pressed_keys.add(key)
+                else:
+                    key_controller.release(key)
+                    self._pressed_keys.discard(key)
             elif kind == "mouse_move":
                 dx, dy = int(event.get("dx", 0)), int(event.get("dy", 0))
                 if abs(dx) > 2000 or abs(dy) > 2000:
@@ -132,7 +136,12 @@ class InputBackend:
                 button = getattr(mouse.Button, button_name, None)
                 if button is None:
                     return False
-                (mouse_controller.press if event.get("pressed") is True else mouse_controller.release)(button)
+                if event.get("pressed") is True:
+                    mouse_controller.press(button)
+                    self._pressed_buttons.add(button)
+                else:
+                    mouse_controller.release(button)
+                    self._pressed_buttons.discard(button)
             elif kind == "mouse_scroll":
                 dx, dy = int(event.get("dx", 0)), int(event.get("dy", 0))
                 if abs(dx) > 20 or abs(dy) > 20:
@@ -144,6 +153,24 @@ class InputBackend:
         except (InputBackendError, OSError, ValueError, TypeError):
             return False
 
+    def release_all(self):
+        if self._controller is None:
+            return
+        keyboard_controller, mouse_controller = self._controller
+        for key in tuple(self._pressed_keys):
+            try:
+                keyboard_controller.release(key)
+            except Exception:
+                pass
+        for button in tuple(self._pressed_buttons):
+            try:
+                mouse_controller.release(button)
+            except Exception:
+                pass
+        self._pressed_keys.clear()
+        self._pressed_buttons.clear()
+
     def close(self):
         self.stop_capture()
+        self.release_all()
         self._controller = None
