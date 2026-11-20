@@ -67,6 +67,7 @@ class NetworkServer:
             self._control_owner = "client"
             channel = self._channel
         self._capture.set_capture_enabled(False)
+        self._capture.release_all()
         try:
             channel.send({"version": PROTOCOL_VERSION, "kind": "control_switch", "owner": "client", "enter_edge": "left"})
             self.on_log("[Mixput] Control transferred to the connected laptop.")
