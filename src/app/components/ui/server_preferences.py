@@ -60,13 +60,12 @@ class ServerPreferences(tk.Frame):
         cards = tk.Frame(self, bg=c["bg_secondary"])
         cards.pack(fill=tk.X, padx=12, pady=(0, 8))
         cards.columnconfigure(0, weight=1)
-        cards.columnconfigure(1, weight=1)
 
         host_frame = tk.LabelFrame(
             cards, text=" SHARE THIS COMPUTER ", bg=c["bg_secondary"],
             fg=c["text_primary"], padx=12, pady=10, font=("Arial", 9, "bold")
         )
-        host_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        host_frame.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=0)
         interface, local_ip = get_active_network_info()
         self.local_ip = local_ip
         self.local_ip_label = tk.Label(
@@ -84,9 +83,9 @@ class ServerPreferences(tk.Frame):
 
         host_actions = tk.Frame(host_frame, bg=c["bg_secondary"])
         host_actions.pack(fill=tk.X, pady=(0, 10))
-        self.start_button = self._button(host_actions, "Start sharing", self.start_server)
+        self.start_button = self._button(host_actions, "Start server", self.start_server)
         self.start_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-        self.stop_button = self._button(host_actions, "Stop", self.stop_server)
+        self.stop_button = self._button(host_actions, "Stop server", self.stop_server)
         self.stop_button.configure(state=tk.DISABLED)
         self.stop_button.pack(side=tk.LEFT)
 
