@@ -30,6 +30,8 @@ class ServerPreferences(tk.Frame):
         )
         self._server_status = "stopped"
         self._client_status = "disconnected"
+        self._active_port = 8080
+        self.on_sharing_changed = lambda sharing, port: None
         self._build()
 
     def _build(self):
@@ -194,14 +196,24 @@ class ServerPreferences(tk.Frame):
             messagebox.showerror("Network unavailable", "Connect this laptop to a local network first.", parent=self)
             return
         if self.server.start("0.0.0.0", port):
+            self._active_port = port
+            self.on_sharing_changed(True, port)
             self.start_button.configure(state=tk.DISABLED)
             self.stop_button.configure(state=tk.NORMAL)
             self._queue_log(f"[Mixput] Other laptop should connect to {local_ip}:{port}.")
 
     def stop_server(self):
         self.server.stop()
+        self.on_sharing_changed(False, self._active_port)
         self.start_button.configure(state=tk.NORMAL)
         self.stop_button.configure(state=tk.DISABLED)
+
+    def set_discovered_device(self, address, port):
+        """Fill connection fields from a LAN discovery result."""
+        self.client_host.delete(0, tk.END)
+        self.client_host.insert(0, address)
+        self.client_port.delete(0, tk.END)
+        self.client_port.insert(0, str(port))
 
     def connect_client(self):
         available, reason = InputBackend.availability()
@@ -255,6 +267,7 @@ class ServerPreferences(tk.Frame):
     def _apply_server_status(self, status):
         self._server_status = status
         active = status in ("listening", "authenticating", "connected")
+        self.on_sharing_changed(active, self._active_port)
         self.start_button.configure(state=tk.DISABLED if active else tk.NORMAL)
         self.stop_button.configure(state=tk.NORMAL if active else tk.DISABLED)
         self._refresh_status()
@@ -318,6 +331,7 @@ class ServerPreferences(tk.Frame):
     def destroy(self):
         self.client.disconnect()
         self.server.stop()
+        self.on_sharing_changed(False, self._active_port)
         self.host_input.close()
         self.remote_input.close()
         super().destroy()

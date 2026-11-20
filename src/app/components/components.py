@@ -1,12 +1,16 @@
 import socket
+import sys
 import threading
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox
+from PIL import Image, ImageTk
 
 from app.components import theme
 from .ui.mixput_frame import create_mixput_frame
 from .core.device_info import get_device_architecture
 from .core.network import get_active_network_info
+from .core.device_discovery import DeviceDiscovery
 from .core.updater import (
     obtain_version,
     check_for_update,
@@ -36,9 +40,13 @@ class App(tk.Canvas):
         self._pages = {}
         self._nav_buttons = {}
         self.current_page = "home"
+        self.discovered_devices = []
+        self.discovery = DeviceDiscovery(on_devices=self._queue_discovered_devices)
 
         self._build_shell()
         self._build_pages()
+        self.connection_panel.server_preferences.on_sharing_changed = self._set_discovery_sharing
+        self.discovery.start()
         self.show_page("home")
         self.after(1500, self.check_for_updates)
 
@@ -55,13 +63,35 @@ class App(tk.Canvas):
         self.topbar.pack(fill=tk.X, padx=12, pady=(12, 8))
 
         brand = tk.Frame(self.topbar, bg=c["bg_secondary"])
-        brand.pack(side=tk.LEFT, padx=16, pady=11)
+        brand.pack(side=tk.LEFT, padx=16, pady=9)
+
+        # Keep the app mark beside the product name in the top navigation.
+        self._brand_icon = None
+        icon_root = Path(
+            getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[3])
+        )
+        icon_path = icon_root / "public" / "assets" / "mixput-ico.png"
+        if icon_path.is_file():
+            try:
+                with Image.open(icon_path) as source:
+                    icon_image = source.convert("RGBA")
+                    icon_image.thumbnail((36, 36), Image.Resampling.LANCZOS)
+                    self._brand_icon = ImageTk.PhotoImage(icon_image)
+                tk.Label(
+                    brand, image=self._brand_icon,
+                    bg=c["bg_secondary"], bd=0,
+                ).pack(side=tk.LEFT, padx=(0, 10))
+            except (OSError, tk.TclError):
+                self._brand_icon = None
+
+        brand_text = tk.Frame(brand, bg=c["bg_secondary"])
+        brand_text.pack(side=tk.LEFT, anchor=tk.CENTER)
         tk.Label(
-            brand, text="MIXPUT", font=("Arial", 16, "bold"),
+            brand_text, text="MIXPUT", font=("Arial", 16, "bold"),
             bg=c["bg_secondary"], fg=c["text_primary"],
         ).pack(anchor=tk.W)
         tk.Label(
-            brand, text=f"Version {self.current_version}",
+            brand_text, text=f"Version {self.current_version}",
             font=("Arial", 9), bg=c["bg_secondary"],
             fg=c["text_secondary"],
         ).pack(anchor=tk.W, pady=(1, 0))
@@ -202,6 +232,45 @@ class App(tk.Canvas):
                 bg=c["bg_secondary"], fg=c["text_primary"],
             ).pack(anchor=tk.W, padx=13, pady=(0, 9))
 
+        nearby = tk.Frame(devices, bg=c["bg_main"])
+        nearby.pack(fill=tk.BOTH, expand=True, pady=(18, 0))
+        tk.Label(
+            nearby, text="Nearby Mixput devices", font=("Arial", 14, "bold"),
+            bg=c["bg_main"], fg=c["text_primary"],
+        ).pack(anchor=tk.W, pady=(0, 4))
+        self.discovery_status = tk.Label(
+            nearby, text="Searching this local network…",
+            font=("Arial", 9), bg=c["bg_main"], fg=c["text_secondary"],
+        )
+        self.discovery_status.pack(anchor=tk.W, pady=(0, 8))
+        list_frame = tk.Frame(
+            nearby, bg=c["bg_secondary"],
+            highlightbackground=c["border"], highlightthickness=1,
+        )
+        list_frame.pack(fill=tk.BOTH, expand=True)
+        self.devices_list = tk.Listbox(
+            list_frame, height=7, relief=tk.FLAT, borderwidth=0,
+            bg=c["bg_secondary"], fg=c["text_primary"],
+            selectbackground=c["border"], selectforeground=c["text_primary"],
+            activestyle="none", font=("Arial", 10),
+        )
+        self.devices_list.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+        self.devices_list.bind("<<ListboxSelect>>", self._select_discovered_device)
+        actions = tk.Frame(nearby, bg=c["bg_main"])
+        actions.pack(fill=tk.X, pady=(8, 0))
+        self.use_device_button = tk.Button(
+            actions, text="Use selected device",
+            command=self._use_selected_device, state=tk.DISABLED,
+            relief=tk.FLAT, cursor="hand2", padx=14, pady=8,
+            bg=c["border"], fg=c["text_primary"],
+            activebackground=c["border"], activeforeground=c["text_primary"],
+        )
+        self.use_device_button.pack(side=tk.LEFT)
+        tk.Label(
+            actions, text="Only devices currently sharing are connectable.",
+            font=("Arial", 8), bg=c["bg_main"], fg=c["text_secondary"],
+        ).pack(side=tk.LEFT, padx=10)
+
         settings = self._page("settings")
         self._heading(
             settings, "Settings",
@@ -228,6 +297,67 @@ class App(tk.Canvas):
             bg=c["bg_secondary"], fg=c["text_primary"],
             activebackground=c["border"], activeforeground=c["text_primary"],
         ).pack(anchor=tk.W)
+
+
+    def _queue_discovered_devices(self, devices):
+        try:
+            self.after(0, self._apply_discovered_devices, devices)
+        except tk.TclError:
+            pass
+
+    def _apply_discovered_devices(self, devices):
+        previous_devices = self.discovered_devices
+        selected = self.devices_list.curselection()
+        selected_id = None
+        if selected and selected[0] < len(previous_devices):
+            selected_id = previous_devices[selected[0]]["id"]
+        self.discovered_devices = devices
+        self.devices_list.delete(0, tk.END)
+        self.use_device_button.configure(state=tk.DISABLED)
+        for device in devices:
+            state = "Sharing" if device["sharing"] else "Available"
+            self.devices_list.insert(
+                tk.END, f'{device["name"]}    {device["ip"]}    ·    {state}'
+            )
+        if not devices:
+            self.discovery_status.configure(
+                text="No other Mixput devices found. Keep both apps open on the same LAN."
+            )
+            self.use_device_button.configure(state=tk.DISABLED)
+            return
+        self.discovery_status.configure(
+            text=f"{len(devices)} Mixput device(s) detected on this network."
+        )
+        if selected_id:
+            for index, device in enumerate(devices):
+                if device["id"] == selected_id:
+                    self.devices_list.selection_set(index)
+                    self._select_discovered_device()
+                    break
+
+    def _select_discovered_device(self, _event=None):
+        selected = self.devices_list.curselection()
+        if not selected or selected[0] >= len(self.discovered_devices):
+            self.use_device_button.configure(state=tk.DISABLED)
+            return
+        device = self.discovered_devices[selected[0]]
+        self.use_device_button.configure(
+            state=tk.NORMAL if device["sharing"] else tk.DISABLED
+        )
+
+    def _use_selected_device(self):
+        selected = self.devices_list.curselection()
+        if not selected or selected[0] >= len(self.discovered_devices):
+            return
+        device = self.discovered_devices[selected[0]]
+        if not device["sharing"]:
+            return
+        panel = self.connection_panel.server_preferences
+        panel.set_discovered_device(device["ip"], device["port"])
+        self.show_page("connection")
+
+    def _set_discovery_sharing(self, sharing, port):
+        self.discovery.set_endpoint(tcp_port=port, sharing=sharing)
 
     def show_page(self, page_id):
         if page_id not in self._pages:
@@ -317,6 +447,11 @@ class App(tk.Canvas):
                 self._recolor_tree(child, colors)
             except tk.TclError:
                 continue
+
+    def destroy(self):
+        if hasattr(self, "discovery"):
+            self.discovery.stop()
+        super().destroy()
 
     def check_for_updates(self, manual=True):
         if self._update_check_running or self._update_install_running:
