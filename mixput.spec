@@ -15,7 +15,7 @@ a = Analysis(
         (str(ROOT / "public" / "assets" / "mixput.png"), "public/assets"),
         (str(ROOT / "public" / "assets" / "drawing-1.svg"), "public/assets"),
     ],
-    hiddenimports=[],
+    hiddenimports=INPUT_HIDDENIMPORTS,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
