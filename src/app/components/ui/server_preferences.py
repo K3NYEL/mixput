@@ -10,7 +10,7 @@ from app.components.core.network_server import NetworkServer
 
 
 class ServerPreferences(tk.Frame):
-    """Visible controls for sharing input between two laptops on a LAN."""
+    """Visible controls for sharing input and approving trusted LAN devices."""
 
     def __init__(self, parent):
         self.colors = theme.CURRENT_THEME
@@ -20,7 +20,7 @@ class ServerPreferences(tk.Frame):
         self.server = NetworkServer(
             on_log=self._queue_log,
             on_status=self._queue_server_status,
-            on_pairing_key=self._show_pairing_key,
+            on_pairing_request=self._queue_pairing_request,
         )
         self.server.set_input_backend(self.host_input)
         self.client = NetworkClient(
@@ -37,7 +37,6 @@ class ServerPreferences(tk.Frame):
     def _build(self):
         c = self.colors
         self.configure(bg=c["bg_secondary"], highlightbackground=c["border"], highlightthickness=1)
-
         available, reason = InputBackend.availability()
         self.backend_status = tk.Label(
             self, text=("Input control ready" if available else f"Input control unavailable: {reason}"),
@@ -50,15 +49,18 @@ class ServerPreferences(tk.Frame):
         cards.columnconfigure(0, weight=1)
         cards.columnconfigure(1, weight=1)
 
-        host_frame = tk.LabelFrame(cards, text=" SHARE THIS COMPUTER ",
-                                   bg=c["bg_secondary"], fg=c["text_primary"], padx=12, pady=10,
-                                   font=("Arial", 9, "bold"))
+        host_frame = tk.LabelFrame(
+            cards, text=" SHARE THIS COMPUTER ", bg=c["bg_secondary"],
+            fg=c["text_primary"], padx=12, pady=10, font=("Arial", 9, "bold")
+        )
         host_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
         interface, local_ip = get_active_network_info()
         self.local_ip = local_ip
-        self.local_ip_label = tk.Label(host_frame, text=f"{local_ip}  ·  {interface}",
-                                        bg=c["bg_secondary"], fg=c["text_primary"],
-                                        font=("Arial", 10, "bold"), anchor=tk.W)
+        self.local_ip_label = tk.Label(
+            host_frame, text=f"{local_ip}  ·  {interface}",
+            bg=c["bg_secondary"], fg=c["text_primary"],
+            font=("Arial", 10, "bold"), anchor=tk.W
+        )
         self.local_ip_label.pack(fill=tk.X, pady=(2, 10))
 
         port_row = tk.Frame(host_frame, bg=c["bg_secondary"])
@@ -68,29 +70,36 @@ class ServerPreferences(tk.Frame):
         self.server_port.pack(side=tk.RIGHT)
 
         host_actions = tk.Frame(host_frame, bg=c["bg_secondary"])
-        host_actions.pack(fill=tk.X, pady=(0, 8))
+        host_actions.pack(fill=tk.X, pady=(0, 10))
         self.start_button = self._button(host_actions, "Start sharing", self.start_server)
         self.start_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
         self.stop_button = self._button(host_actions, "Stop", self.stop_server)
         self.stop_button.configure(state=tk.DISABLED)
         self.stop_button.pack(side=tk.LEFT)
 
-        tk.Label(host_frame, text="Pairing key", bg=c["bg_secondary"],
-                 fg=c["text_secondary"], font=("Arial", 8)).pack(anchor=tk.W)
-        key_row = tk.Frame(host_frame, bg=c["bg_secondary"])
-        key_row.pack(fill=tk.X)
-        self.host_key = self._entry(key_row, "", 48)
-        self.host_key.configure(state="readonly")
-        self.host_key.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-        self.copy_key_button = self._button(key_row, "Copy", self.copy_pairing_key)
-        self.copy_key_button.pack(side=tk.RIGHT)
+        tk.Label(
+            host_frame, text="Authorized devices", bg=c["bg_secondary"],
+            fg=c["text_secondary"], font=("Arial", 8, "bold")
+        ).pack(anchor=tk.W)
+        self.authorized_list = tk.Listbox(
+            host_frame, height=4, relief=tk.FLAT, borderwidth=0,
+            bg=c["bg_main"], fg=c["text_primary"],
+            selectbackground=c["border"], activestyle="none",
+        )
+        self.authorized_list.pack(fill=tk.X, pady=(4, 5))
+        self.revoke_button = self._button(host_frame, "Revoke selected device", self.revoke_selected_device)
+        self.revoke_button.pack(anchor=tk.W)
+        self._refresh_authorized_devices()
 
-        client_frame = tk.LabelFrame(cards, text=" CONNECT TO A COMPUTER ",
-                                     bg=c["bg_secondary"], fg=c["text_primary"], padx=12, pady=10,
-                                     font=("Arial", 9, "bold"))
+        client_frame = tk.LabelFrame(
+            cards, text=" CONNECT TO A COMPUTER ", bg=c["bg_secondary"],
+            fg=c["text_primary"], padx=12, pady=10, font=("Arial", 9, "bold")
+        )
         client_frame.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
-        tk.Label(client_frame, text="Host local IP address", bg=c["bg_secondary"],
-                 fg=c["text_secondary"], font=("Arial", 8)).pack(anchor=tk.W)
+        tk.Label(
+            client_frame, text="Host local IP address", bg=c["bg_secondary"],
+            fg=c["text_secondary"], font=("Arial", 8)
+        ).pack(anchor=tk.W)
         self.client_host = self._entry(client_frame, "", 24)
         self.client_host.pack(fill=tk.X, pady=(3, 9))
 
@@ -100,30 +109,32 @@ class ServerPreferences(tk.Frame):
         self.client_port = self._entry(connection_fields, "8080", 8)
         self.client_port.pack(side=tk.RIGHT)
 
-        tk.Label(client_frame, text="Pairing key from the host", bg=c["bg_secondary"],
-                 fg=c["text_secondary"], font=("Arial", 8)).pack(anchor=tk.W)
-        self.client_key = self._entry(client_frame, "", 24)
-        self.client_key.pack(fill=tk.X, pady=(3, 10))
-
+        tk.Label(
+            client_frame, text="New devices require approval on the host.",
+            bg=c["bg_secondary"], fg=c["text_secondary"],
+            font=("Arial", 8), wraplength=260, justify=tk.LEFT,
+        ).pack(anchor=tk.W, pady=(0, 10))
         client_actions = tk.Frame(client_frame, bg=c["bg_secondary"])
         client_actions.pack(fill=tk.X)
-        self.connect_button = self._button(client_actions, "Connect", self.connect_client)
+        self.connect_button = self._button(client_actions, "Request access", self.connect_client)
         self.connect_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
         self.disconnect_button = self._button(client_actions, "Disconnect", self.disconnect_client)
         self.disconnect_button.configure(state=tk.DISABLED)
         self.disconnect_button.pack(side=tk.LEFT)
 
-        self.status_label = tk.Label(self, text="Stopped  ·  Disconnected",
-                                     font=("Arial", 9, "bold"), anchor=tk.W,
-                                     bg=c["bg_main"], fg=c["text_secondary"], padx=12, pady=9)
+        self.status_label = tk.Label(
+            self, text="Stopped  ·  Disconnected", font=("Arial", 9, "bold"),
+            anchor=tk.W, bg=c["bg_main"], fg=c["text_secondary"], padx=12, pady=9
+        )
         self.status_label.pack(fill=tk.X, padx=12, pady=(0, 8))
-
         log_frame = tk.Frame(self, bg=c["bg_secondary"])
         log_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
-        self.log_box = tk.Text(log_frame, height=4, wrap=tk.WORD, state=tk.DISABLED,
-                               bg=c["bg_main"], fg=c["text_secondary"],
-                               insertbackground=c["text_primary"], relief=tk.FLAT,
-                               font=("Consolas", 8), padx=8, pady=6)
+        self.log_box = tk.Text(
+            log_frame, height=4, wrap=tk.WORD, state=tk.DISABLED,
+            bg=c["bg_main"], fg=c["text_secondary"],
+            insertbackground=c["text_primary"], relief=tk.FLAT,
+            font=("Consolas", 8), padx=8, pady=6
+        )
         scrollbar = tk.Scrollbar(log_frame, command=self.log_box.yview)
         self.log_box.configure(yscrollcommand=scrollbar.set)
         self.log_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(8, 0), pady=(0, 8))
@@ -158,26 +169,46 @@ class ServerPreferences(tk.Frame):
             raise ValueError("Port must be between 1 and 65535.")
         return port
 
-    def _show_pairing_key(self, key):
+    def _queue_pairing_request(self, request):
         try:
-            self.after(0, self._set_pairing_key, key)
+            self.after(0, self._ask_pairing_request, request)
         except tk.TclError:
             pass
 
-    def _set_pairing_key(self, key):
-        self.host_key.configure(state=tk.NORMAL)
-        self.host_key.delete(0, tk.END)
-        self.host_key.insert(0, key)
-        self.host_key.configure(state="readonly")
+    def _ask_pairing_request(self, request):
+        approved = messagebox.askyesno(
+            "Mixput device pairing",
+            f'{request["name"]} ({request["ip"]}) wants permission to use this computer\\'s keyboard and mouse.\\n\\nAllow this device?',
+            parent=self.winfo_toplevel(),
+        )
+        self.server.approve_pairing(request["request_id"], approved)
+        if approved:
+            self._queue_log(f'[Mixput] Authorized {request["name"]} ({request["ip"]}).')
+            self._refresh_authorized_devices()
+        else:
+            self._queue_log(f'[Mixput] Rejected pairing request from {request["name"]}.')
 
-    def copy_pairing_key(self):
-        key = self.host_key.get().strip()
-        if not key:
-            messagebox.showinfo("Pairing key", "Start sharing first to create a pairing key.", parent=self)
+    def _refresh_authorized_devices(self):
+        if not hasattr(self, "authorized_list"):
             return
-        self.clipboard_clear()
-        self.clipboard_append(key)
-        self._queue_log("[Mixput] Pairing key copied to clipboard.")
+        self.authorized_list.delete(0, tk.END)
+        self._authorized_devices = self.server.pairings.list_authorized_clients()
+        for device in self._authorized_devices:
+            self.authorized_list.insert(tk.END, f'{device.get("name", "Device")}  ·  {device.get("address", "")}')
+
+    def revoke_selected_device(self):
+        selected = self.authorized_list.curselection()
+        if not selected or selected[0] >= len(self._authorized_devices):
+            messagebox.showinfo("Authorized devices", "Select a device to revoke.", parent=self)
+            return
+        device = self._authorized_devices[selected[0]]
+        if messagebox.askyesno(
+            "Revoke device",
+            f'Revoke access for {device.get("name", "this device")}? It will need approval again.',
+            parent=self,
+        ):
+            self.server.revoke_device(device["id"])
+            self._refresh_authorized_devices()
 
     def start_server(self):
         available, reason = InputBackend.availability()
@@ -200,7 +231,7 @@ class ServerPreferences(tk.Frame):
             self.on_sharing_changed(True, port)
             self.start_button.configure(state=tk.DISABLED)
             self.stop_button.configure(state=tk.NORMAL)
-            self._queue_log(f"[Mixput] Other laptop should connect to {local_ip}:{port}.")
+            self._queue_log(f"[Mixput] Sharing is available at {local_ip}:{port}.")
 
     def stop_server(self):
         self.server.stop()
@@ -209,7 +240,6 @@ class ServerPreferences(tk.Frame):
         self.stop_button.configure(state=tk.DISABLED)
 
     def set_discovered_device(self, address, port):
-        """Fill connection fields from a LAN discovery result."""
         self.client_host.delete(0, tk.END)
         self.client_host.insert(0, address)
         self.client_port.delete(0, tk.END)
@@ -221,23 +251,17 @@ class ServerPreferences(tk.Frame):
             messagebox.showerror("Input support unavailable", reason, parent=self)
             return
         host = self.client_host.get().strip()
-        key = self.client_key.get().strip()
         try:
             port = self._read_port(self.client_port)
             if not host:
-                raise ValueError("Enter the LAN IP shown on the host laptop.")
-            try:
-                parsed_host = ipaddress.ip_address(host)
-            except ValueError as error:
-                raise ValueError("Enter the host laptop IPv4 address.") from error
+                raise ValueError("Select a nearby host or enter its LAN IP address.")
+            parsed_host = ipaddress.ip_address(host)
             if parsed_host.version != 4:
                 raise ValueError("Only IPv4 LAN addresses are supported currently.")
-            if not key:
-                raise ValueError("Paste the pairing key from the host laptop.")
         except ValueError as error:
             messagebox.showerror("Connection settings", str(error), parent=self)
             return
-        if self.client.connect(host, port, key):
+        if self.client.connect(host, port):
             self.connect_button.configure(state=tk.DISABLED)
 
     def disconnect_client(self):
@@ -289,13 +313,13 @@ class ServerPreferences(tk.Frame):
         server_labels = {
             "stopped": "Stopped",
             "listening": "Sharing",
-            "authenticating": "Pairing",
+            "authenticating": "Approving device",
             "connected": "Sharing active",
             "error": "Sharing error",
         }
         client_labels = {
             "disconnected": "Disconnected",
-            "connecting": "Connecting",
+            "connecting": "Requesting access",
             "connected": "Connected",
         }
         server = server_labels.get(self._server_status, self._server_status.title())
@@ -313,9 +337,10 @@ class ServerPreferences(tk.Frame):
                 if isinstance(child, tk.Text):
                     child.configure(bg=colors["bg_main"], fg=colors["text_secondary"],
                                     insertbackground=colors["text_primary"])
-                elif isinstance(child, tk.Entry):
+                elif isinstance(child, (tk.Entry, tk.Listbox)):
                     child.configure(bg=colors["bg_main"], fg=colors["text_primary"],
-                                    insertbackground=colors["text_primary"])
+                                    insertbackground=colors["text_primary"],
+                                    selectbackground=colors["border"])
                 elif isinstance(child, tk.Button):
                     child.configure(bg=colors["bg_main"], fg=colors["text_primary"],
                                     activebackground=colors["border"],
