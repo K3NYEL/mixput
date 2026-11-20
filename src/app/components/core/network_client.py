@@ -35,7 +35,7 @@ class NetworkClient:
         try:
             self.on_message(f"[Mixput] Connecting to {host}:{port}...")
             connection = socket.create_connection((host, port), timeout=6)
-            connection.settimeout(1.0)
+            connection.settimeout(8.0)
             self.sock = connection
             channel = SecureChannel(connection, pairing_key)
             self._channel = channel
@@ -43,6 +43,7 @@ class NetworkClient:
             hello = channel.receive()
             if not hello or hello.get("version") != PROTOCOL_VERSION or hello.get("kind") != "hello_ack":
                 raise ProtocolError("The host rejected pairing or uses another protocol.")
+            connection.settimeout(1.0)
             self.on_status("connected")
             self.on_message(f"[Mixput] Paired with {host}. Input sharing is active.")
             while self.running:
