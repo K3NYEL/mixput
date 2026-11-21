@@ -67,5 +67,42 @@ class NetworkLifecycleTests(unittest.TestCase):
         self.assertFalse(server.start("127.0.0.1", 0))
 
 
+    def test_host_local_mode_releases_remote_held_input(self):
+        class FakeCapture:
+            def release_all(self):
+                pass
+
+            def set_exclusive_capture(self, _enabled):
+                return True
+
+            def set_relative_mode(self, _enabled):
+                return None
+
+            def park_cursor(self):
+                return True
+
+        from app.components.core.input_ownership import InputOwnership
+
+        server = NetworkServer.__new__(NetworkServer)
+        server._lock = threading.RLock()
+        server._ownership = InputOwnership("peer-device")
+        server._local_mode = False
+        server._peers = {"peer-device": {"channel": FakeChannel()}}
+        server._capture = FakeCapture()
+        server.on_log = lambda _message: None
+
+        self.assertTrue(server.set_local_mode(True))
+        self.assertEqual(
+            server._peers["peer-device"]["channel"].messages[-1],
+            {"version": 3, "kind": "release_inputs"},
+        )
+
+
+    def test_linux_has_x11_input_dependency(self):
+        import sys
+        if sys.platform.startswith("linux"):
+            import Xlib  # noqa: F401
+
+
 if __name__ == "__main__":
     unittest.main()
