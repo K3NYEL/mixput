@@ -28,6 +28,7 @@ class NetworkClient:
         self._channel = None
         self._thread = None
         self._stop_event = threading.Event()
+        self._terminal_error = False
         self._lock = threading.RLock()
         self._control_owner = "host"
         self._ownership_epoch = -1
@@ -221,7 +222,9 @@ class NetworkClient:
         delay = 1.0
         while self.running and not self._stop_event.is_set():
             self._run_session(host, port)
-            if not self.running or self._stop_event.is_set():
+            if not self.running or self._stop_event.is_set() or self._terminal_error:
+                if self._terminal_error:
+                    self.running = False
                 break
             self.on_status("reconnecting")
             self.on_message(f"[Mixput] Connection lost. Retrying in {delay:.0f}s...")
@@ -291,7 +294,11 @@ class NetworkClient:
                         self.on_chat(message)
                 elif kind == "disconnect":
                     break
-        except (OSError, ProtocolError, ValueError, KeyError, RuntimeError, TypeError) as error:
+        except ProtocolError as error:
+            self._terminal_error = True
+            if self.running:
+                self.on_message(f"[Mixput] Connection rejected: {error}")
+        except (OSError, ValueError, KeyError, RuntimeError, TypeError) as error:
             if self.running:
                 self.on_message(f"[Mixput] Connection failed: {error}")
         finally:
