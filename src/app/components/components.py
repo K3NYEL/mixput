@@ -378,7 +378,7 @@ class App(tk.Canvas):
     def _append_server_log(self, message):
         try:
             self.server_log_view.configure(state=tk.NORMAL)
-            self.server_log_view.insert(tk.END, message + "\\n")
+            self.server_log_view.insert(tk.END, message + "\n")
             lines = int(self.server_log_view.index("end-1c").split(".")[0])
             if lines > 500:
                 self.server_log_view.delete("1.0", f"{lines - 500}.0")
@@ -616,7 +616,7 @@ class App(tk.Canvas):
         if error:
             if manual:
                 messagebox.showerror(
-                    "Update error", f"Could not check for updates:\\n{error}",
+                    "Update error", f"Could not check for updates:\n{error}",
                     parent=self.winfo_toplevel(),
                 )
             return
@@ -630,8 +630,8 @@ class App(tk.Canvas):
         version = info.get("version", "unknown")
         if messagebox.askyesno(
             "Update available",
-            f"A new Mixput version is available: {version}\\n\\n"
-            f"Current version: {self.current_version}\\n\\n"
+            f"A new Mixput version is available: {version}\n\n"
+            f"Current version: {self.current_version}\n\n"
             "Download and install this update? Mixput will restart.",
             parent=self.winfo_toplevel(),
         ):
