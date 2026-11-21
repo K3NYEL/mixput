@@ -282,6 +282,9 @@ class NetworkClient:
                 elif kind == "input":
                     if not self._apply_remote_input(message):
                         self.on_message("[Mixput] Rejected stale, unauthorized, or invalid input event.")
+                elif kind == "release_inputs":
+                    if self.input_backend:
+                        self.input_backend.release_all()
                 elif kind == "chat":
                     sender, text = message.get("sender"), message.get("text")
                     if isinstance(sender, str) and isinstance(text, str) and len(text) <= MAX_CHAT_LENGTH:
