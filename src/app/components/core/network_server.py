@@ -6,7 +6,7 @@ import threading
 
 from app.components.core.diagnostics import get_logger
 
-_LOG = get_logger("network_server" if __name__ == "app.components.core.network_server" else "network_client")
+_LOG = get_logger("network_server")
 import uuid
 from cryptography.fernet import Fernet
 from app.components.core.input_protocol import PROTOCOL_VERSION, EVENT_TYPES, ProtocolError
