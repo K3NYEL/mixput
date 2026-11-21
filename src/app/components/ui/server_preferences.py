@@ -110,7 +110,12 @@ class ServerPreferences(tk.Frame):
         port_row.pack(fill=tk.X, pady=(0, 8))
         tk.Label(port_row, text="Port", bg=c["bg_secondary"], fg=c["text_secondary"]).pack(side=tk.LEFT)
         self.server_port = self._entry(port_row, "8080", 8)
+        self.server_port.configure(state=tk.DISABLED)
         self.server_port.pack(side=tk.RIGHT)
+        tk.Label(
+            port_row, text="Automatic service port", bg=c["bg_secondary"],
+            fg=c["text_secondary"], font=("Arial", 8),
+        ).pack(side=tk.LEFT, padx=(8, 0))
 
         host_actions = tk.Frame(host_frame, bg=c["bg_secondary"])
         host_actions.pack(fill=tk.X, pady=(0, 10))
@@ -315,11 +320,9 @@ class ServerPreferences(tk.Frame):
         if not available:
             messagebox.showerror("Input support unavailable", reason, parent=self)
             return
-        try:
-            port = self._read_port(self.server_port)
-        except ValueError as error:
-            messagebox.showerror("Invalid port", str(error), parent=self)
-            return
+        # The same fixed listener port is used on every peer; no manual
+        # host/port connection workflow is exposed to the user.
+        port = 8080
         self.refresh_network_info()
         local_ip = self.local_ip
         if local_ip == "0.0.0.0":
@@ -515,9 +518,9 @@ class ServerPreferences(tk.Frame):
         server = server_labels.get(self._server_status, self._server_status.title())
         if self._server_status == "stopped" and self._client_status != "disconnected":
             client = client_labels.get(self._client_status, self._client_status.title())
-            self.status_label.configure(text=f"Mixput client: {client}")
+            self.status_label.configure(text=f"Mixput peer: {client}")
         else:
-            self.status_label.configure(text=f"Mixput server: {server}")
+            self.status_label.configure(text=f"Mixput network coordinator: {server}")
         devices = self.server.connected_devices if self.server.running else (
             self.client._devices if self._client_status == "connected" else [])
         owner = self.server._control_owner if self.server.running else self.client._control_owner
