@@ -1,7 +1,12 @@
 """Authenticated multi-device Mixput hub (maximum four devices including host)."""
 import base64
+import platform
 import socket
 import threading
+
+from app.components.core.diagnostics import get_logger
+
+_LOG = get_logger("network_server")
 import uuid
 from cryptography.fernet import Fernet
 from app.components.core.input_protocol import PROTOCOL_VERSION, EVENT_TYPES, ProtocolError
@@ -174,6 +179,11 @@ class NetworkServer:
                 device_id != "host" and not self.local_mode
             )
             if device_id != "host" and not self.local_mode and not exclusive_ok:
+                _LOG.error(
+                    "Control transfer to %s failed: exclusive input capture was not acquired "
+                    "(platform=%s, old_owner=%s)",
+                    device_id, platform.system(), old,
+                )
                 with self._lock:
                     self._ownership.force(old)
                     rollback_epoch = self._ownership_epoch
@@ -222,7 +232,14 @@ class NetworkServer:
                 )
         if not next_peer:
             return False
-        return self._set_owner(next_peer["id"], "left" if side == "right" else "right")
+        try:
+            transferred = self._set_owner(next_peer["id"], "left" if side == "right" else "right")
+            if not transferred:
+                _LOG.error("Edge handoff failed: side=%s destination=%s", side, next_peer.get("name"))
+            return transferred
+        except Exception:
+            _LOG.exception("Unhandled exception during local edge handoff")
+            return False
 
     def _send_input(self, event):
         if not isinstance(event, dict) or event.get("type") not in EVENT_TYPES:

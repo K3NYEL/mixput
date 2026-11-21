@@ -8,6 +8,7 @@ from tkinter import messagebox
 from PIL import Image, ImageTk
 
 from app.components import App, theme
+from app.components.core.diagnostics import configure_diagnostics
 
 
 class MainWindow(tk.Tk):
@@ -46,7 +47,8 @@ class MainWindow(tk.Tk):
 
 
 def main() -> None:
-    """Launch the actual Mixput desktop UI (not the old scaffold placeholder)."""
+    """Launch Mixput with persistent diagnostics enabled."""
+    configure_diagnostics()
     window = MainWindow()
     window.mainloop()
 

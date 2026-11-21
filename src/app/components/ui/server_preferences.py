@@ -5,6 +5,7 @@ from tkinter import messagebox
 
 from app.components import theme
 from app.components.core.input_backend import InputBackend
+from app.components.core.diagnostics import log_path, open_log_directory
 from app.components.core.device_discovery import DeviceDiscovery
 from app.components.core.network import get_active_network_info
 from app.components.core.network_client import NetworkClient
@@ -59,6 +60,7 @@ class ServerPreferences(tk.Frame):
         self.on_activity = lambda message: None
         self.on_sharing_changed = lambda sharing, port: None
         self._build()
+        self._queue_log(f"[Mixput] Diagnostic log: {log_path()}")
         # Every running Mixput instance listens and announces itself. A stable
         # identity election chooses the same session coordinator on every peer.
         self.after(300, self.start_server)
@@ -125,7 +127,11 @@ class ServerPreferences(tk.Frame):
         self.start_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
         self.stop_button = self._button(host_actions, "Stop Mixput", self.stop_server)
         self.stop_button.configure(state=tk.DISABLED)
-        self.stop_button.pack(side=tk.LEFT)
+        self.stop_button.pack(side=tk.LEFT, padx=(4, 0))
+        self.diagnostics_button = self._button(
+            host_actions, "Open error log", self.open_diagnostics
+        )
+        self.diagnostics_button.pack(side=tk.RIGHT, padx=(4, 0))
 
         tk.Label(
             host_frame, text="Devices authorized on this computer (up to 3)", bg=c["bg_secondary"],
@@ -297,6 +303,19 @@ class ServerPreferences(tk.Frame):
         ):
             self.server.revoke_device(device["id"])
             self._refresh_authorized_devices()
+
+    def open_diagnostics(self):
+        """Open the local folder containing Mixput error and input-capture logs."""
+        try:
+            path = open_log_directory()
+            self._queue_log(f"[Mixput] Diagnostics folder: {path}")
+        except (OSError, RuntimeError) as error:
+            self._queue_log(f"[Mixput] Could not open diagnostics folder: {error}")
+            messagebox.showerror(
+                "Mixput diagnostics",
+                f"Could not open the diagnostics folder.\n\nLog file: {log_path()}\n\n{error}",
+                parent=self,
+            )
 
     def refresh_network_info(self):
         interface, local_ip = get_active_network_info()
