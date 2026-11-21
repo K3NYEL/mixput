@@ -460,7 +460,6 @@ class NetworkServer:
                     self.on_log("[Mixput] Ignored input from a receiver device.")
                 elif kind == "local_mode":
                     enabled = message.get("enabled")
-                    requested_epoch = message.get("ownership_epoch")
                     if not isinstance(enabled, bool):
                         raise ProtocolError("Invalid local-mode state.")
                     with self._lock:
