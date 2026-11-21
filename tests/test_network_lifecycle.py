@@ -200,6 +200,63 @@ class NetworkLifecycleTests(unittest.TestCase):
         self.assertEqual(target_channel.messages[-1]["source_id"], "peer-a")
         self.assertEqual(target_channel.messages[-1]["target_id"], "peer-b")
 
+    def test_edge_detection_rearms_after_leaving_an_unavailable_edge(self):
+        from app.components.core.input_backend import InputBackend
+
+        backend = InputBackend()
+        backend.configure_edge_switch(("left", "right"), (100, 80))
+        self.assertEqual(backend._edge_for_position((99, 40)), "right")
+        # Remaining at the same edge is latched; moving away rearms detection.
+        self.assertIsNone(backend._edge_for_position((99, 41)))
+        self.assertIsNone(backend._edge_for_position((50, 40)))
+        self.assertEqual(backend._edge_for_position((0, 40)), "left")
+
+    def test_client_two_device_handoff_works_from_either_edge(self):
+        client = NetworkClient(pairing_store=FakePairings())
+        channel = FakeChannel()
+        client._channel = channel
+        client._control_owner = client._device_id
+        client._ownership_epoch = 9
+        client._index = 1
+        client._devices = [
+            {"id": "host", "index": 0},
+            {"id": client._device_id, "index": 1},
+        ]
+
+        self.assertTrue(client._on_local_edge("left"))
+        self.assertEqual(channel.messages[-1]["kind"], "control_switch")
+        self.assertEqual(channel.messages[-1]["side"], "left")
+        self.assertTrue(client._on_local_edge("right"))
+        self.assertEqual(channel.messages[-1]["side"], "right")
+
+    def test_server_two_device_handoff_works_from_either_edge(self):
+        from app.components.core.input_ownership import InputOwnership
+
+        server = NetworkServer.__new__(NetworkServer)
+        server._lock = threading.RLock()
+        server._ownership = InputOwnership("host")
+        server._local_mode = False
+        peer_channel = FakeChannel()
+        server._peers = {
+            "peer-a": {
+                "id": "peer-a", "name": "Peer", "index": 1,
+                "channel": peer_channel, "local_mode": False,
+            }
+        }
+        server._capture = None
+        server.on_devices = lambda _devices: None
+        server.on_log = lambda _message: None
+        server._host_name = "Host"
+        server.pairings = FakePairings()
+
+        # The ownership implementation is exercised with a fake successful
+        # transfer to avoid requiring a real OS input backend.
+        server._set_owner = lambda device_id, enter_edge=None: (
+            device_id == "peer-a" and enter_edge in ("left", "right")
+        )
+        self.assertTrue(server._on_local_edge("left"))
+        self.assertTrue(server._on_local_edge("right"))
+
     def test_client_refuses_overlapping_reconnect_threads(self):
         client = NetworkClient(pairing_store=FakePairings())
         client._thread = FakeThread()
