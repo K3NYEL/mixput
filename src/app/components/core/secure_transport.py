@@ -67,8 +67,8 @@ class SecureChannel:
     def _write_loop(self):
         while not self._closed.is_set():
             try:
-                frame = self._send_queue.get()
-            except Exception:
+                frame = self._send_queue.get(timeout=0.2)
+            except queue.Empty:
                 continue
             try:
                 if frame is None:
