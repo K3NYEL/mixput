@@ -248,6 +248,8 @@ class NetworkClient:
             self._port = int(port)
             self.on_message(f"[Mixput] Connecting to {host}:{port}...")
             connection = socket.create_connection((host, port), timeout=6)
+            connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            connection.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
             connection.settimeout(8.0)
             self.sock = connection
             saved = self.pairings.get_host(host, port)
@@ -268,7 +270,7 @@ class NetworkClient:
             hello = channel.receive()
             if not hello or hello.get("version") != PROTOCOL_VERSION or hello.get("kind") != "hello_ack":
                 raise ProtocolError("The host rejected the secure session.")
-            connection.settimeout(0.5)
+            connection.settimeout(None)
             if self.input_backend:
                 self.input_backend.start_capture()
                 self.input_backend.set_capture_enabled(False)
