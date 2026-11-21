@@ -11,7 +11,6 @@ from app.components.core.pairing_handshake import (
 )
 from app.components.core.pairing_store import PairingStore
 from app.components.core.secure_transport import SecureChannel
-from app.components.core.virtual_network import VirtualNetworkManager
 from app.components.core.input_ownership import InputOwnership
 
 MAX_DEVICES = 4
@@ -27,15 +26,6 @@ class NetworkServer:
         self.on_chat = on_chat or (lambda message: None)
         self.on_devices = on_devices or (lambda devices: None)
         self.pairings = pairing_store or PairingStore()
-        self.virtual_network = VirtualNetworkManager(self.pairings.device_id)
-        for saved_device in self.pairings.list_authorized_clients():
-            saved_ip = saved_device.get("virtual_ip")
-            if saved_ip:
-                try:
-                    self.virtual_network.reserve(saved_device["id"], saved_ip)
-                except (KeyError, ValueError):
-                    # Repair invalid or duplicate legacy assignments when that device reconnects.
-                    continue
         self.running = False
         self._server_socket = None
         self._thread = None
@@ -68,16 +58,15 @@ class NetworkServer:
 
     def _device_snapshot_locked(self):
         return [{"id": "host", "device_id": self.pairings.device_id,
-                 "name": self._host_name, "index": 0, "host": True,
-                 "virtual_ip": self.virtual_network.host_ip}] + [
+                 "name": self._host_name, "index": 0, "host": True}] + [
             {"id": p["id"], "device_id": p["id"], "name": p["name"],
-             "index": p["index"], "host": False, "virtual_ip": p["virtual_ip"]}
+             "index": p["index"], "host": False}
             for p in sorted(self._peers.values(), key=lambda item: item["index"])
         ]
 
     def start(self, host="0.0.0.0", port=8080):
         with self._lock:
-            if self.running:
+            if self.running or (self._thread and self._thread.is_alive()):
                 return False
             self.running = True
             self._thread = threading.Thread(target=self._run, args=(host, port),
@@ -105,6 +94,16 @@ class NetworkServer:
             if self._local_mode == enabled:
                 return False
             self._local_mode = enabled
+        with self._lock:
+            active_peer = self._peers.get(self._control_owner)
+        if enabled and active_peer:
+            try:
+                active_peer["channel"].send({
+                    "version": PROTOCOL_VERSION,
+                    "kind": "release_inputs",
+                })
+            except (OSError, ProtocolError, ValueError):
+                pass
         if self._capture:
             self._capture.release_all()
             self._capture.set_exclusive_capture(not enabled and self._control_owner != "host")
@@ -134,8 +133,7 @@ class NetworkServer:
         try:
             peer["channel"].send({"version": PROTOCOL_VERSION, "kind": "session_state",
                                   "devices": devices, "owner": owner, "enter_edge": enter_edge,
-                                  "ownership_epoch": ownership_epoch,
-                                  "virtual_network": self.virtual_network.network_cidr})
+                                  "ownership_epoch": ownership_epoch})
         except (OSError, ProtocolError, ValueError):
             pass
 
@@ -158,7 +156,10 @@ class NetworkServer:
 
     def _set_owner(self, device_id, enter_edge=None):
         with self._lock:
-            if device_id != "host" and device_id not in self._peers:
+            if device_id != "host" and (
+                device_id not in self._peers
+                or self._peers[device_id].get("local_mode", False)
+            ):
                 return False
             allowed = {"host", *self._peers.keys()}
             transfer = self._ownership.transfer(device_id, allowed)
@@ -222,7 +223,7 @@ class NetworkServer:
             target_id = self._control_owner
             epoch = self._ownership_epoch
             peer = self._peers.get(target_id)
-        if target_id == "host" or peer is None:
+        if target_id == "host" or peer is None or peer.get("local_mode", False):
             return False
         try:
             with self._lock:
@@ -230,12 +231,11 @@ class NetworkServer:
                     return False
                 self._input_sequence = getattr(self, "_input_sequence", 0) + 1
                 sequence = self._input_sequence
-            peer["channel"].send({
+            return bool(peer["channel"].send({
                 "version": PROTOCOL_VERSION, "kind": "input",
                 "source_id": "host", "target_id": target_id,
                 "ownership_epoch": epoch, "sequence": sequence, "event": event,
-            })
-            return True
+            }))
         except (OSError, ProtocolError, ValueError) as error:
             self.on_log(f"[Mixput] Could not transmit input: {error}")
             return False
@@ -248,15 +248,19 @@ class NetworkServer:
             return False
         message = {"version": PROTOCOL_VERSION, "kind": "chat",
                    "sender_id": "host", "sender": self._host_name, "text": text}
-        self.on_chat(message)
         with self._lock:
             peers = list(self._peers.values())
+        if not peers:
+            return False
+        delivered = False
         for peer in peers:
             try:
-                peer["channel"].send(message)
+                delivered = bool(peer["channel"].send(message)) or delivered
             except (OSError, ProtocolError, ValueError):
-                pass
-        return True
+                continue
+        if delivered:
+            self.on_chat(message)
+        return delivered
 
     def approve_pairing(self, request_id, approved):
         with self._lock:
@@ -277,23 +281,9 @@ class NetworkServer:
             self.on_log("[Mixput] Device authorization revoked.")
         return revoked
 
-    def _virtual_ip_for(self, device_id):
-        record = self.pairings.get_authorized_client(device_id)
-        if not record:
-            raise ProtocolError("The device must be authorized before receiving a virtual IP.")
-        saved_ip = record.get("virtual_ip")
-        if saved_ip:
-            try:
-                return self.virtual_network.reserve(device_id, saved_ip)
-            except ValueError:
-                pass
-        virtual_ip = self.virtual_network.address_for(device_id)
-        if not self.pairings.set_client_virtual_ip(device_id, virtual_ip):
-            raise ProtocolError("Could not persist the Mixput virtual IP assignment.")
-        return virtual_ip
-
     def _run(self, host, port):
         server = None
+        final_status = "stopped"
         try:
             server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -333,7 +323,7 @@ class NetworkServer:
         except OSError as error:
             if self.running:
                 self.on_log(f"[Mixput] Server error: {error}")
-                self.on_status("error")
+                final_status = "error"
         finally:
             self._close_all_peers()
             if server:
@@ -344,7 +334,7 @@ class NetworkServer:
             with self._lock:
                 self._server_socket = None
                 self.running = False
-            self.on_status("stopped")
+            self.on_status(final_status)
 
     def _request_approval(self, request):
         request_id = uuid.uuid4().hex
@@ -414,7 +404,6 @@ class NetworkServer:
                     "host_id": self.pairings.device_id, "host_name": self._host_name,
                     "public_key": public_text, "nonce": nonce, "ciphertext": ciphertext})
                 channel = SecureChannel(connection, token)
-            virtual_ip = self._virtual_ip_for(client_id)
             with self._lock:
                 if not self.running or len(self._peers) >= MAX_DEVICES - 1 or client_id in self._peers:
                     raise ProtocolError("The Mixput server is full or this device is already connected.")
@@ -426,8 +415,7 @@ class NetworkServer:
                 index = len(self._peers) + 1
                 peer = {"id": client_id, "name": (name.strip() if 'name' in locals() else self.pairings.get_authorized_client(client_id)["name"]),
                         "channel": channel, "socket": connection, "index": index,
-                        "address": address[0],
-                        "virtual_ip": virtual_ip}
+                        "address": address[0], "local_mode": False}
                 self._peers[client_id] = peer
                 owner = self._control_owner
                 devices = self._device_snapshot_locked()
@@ -453,11 +441,28 @@ class NetworkServer:
                 if kind == "disconnect":
                     break
                 if kind == "input":
+                    self.on_log("[Mixput] Ignored input from a receiver device.")
+                elif kind == "local_mode":
+                    enabled = message.get("enabled")
+                    if not isinstance(enabled, bool):
+                        raise ProtocolError("Invalid local-mode state.")
                     with self._lock:
-                        owner = self._control_owner
-                    event = message.get("event")
-                    if isinstance(event, dict):
-                        self.on_log("[Mixput] Ignored input from a receiver device.")
+                        current_peer = self._peers.get(client_id)
+                        valid = current_peer is peer
+                        if valid:
+                            current_peer["local_mode"] = enabled
+                            return_to_host = enabled and self._control_owner == client_id
+                        else:
+                            return_to_host = False
+                    if not valid:
+                        break
+                    self.on_log(
+                        f"[Mixput] {peer['name']} {'entered local mode' if enabled else 'returned to shared mode'}."
+                    )
+                    if return_to_host:
+                        self._set_owner("host", "right")
+                    else:
+                        self._notify_devices()
                 elif kind == "control_switch":
                     side = message.get("side")
                     requested_epoch = message.get("ownership_epoch")
@@ -468,6 +473,7 @@ class NetworkServer:
                         target = next((d for d in devices_now if d["index"] == target_index), None)
                         allowed = (
                             self._control_owner == client_id
+                            and not peer.get("local_mode", False)
                             and isinstance(requested_epoch, int)
                             and not isinstance(requested_epoch, bool)
                             and requested_epoch == self._ownership_epoch
@@ -551,11 +557,17 @@ class NetworkServer:
         with self._lock:
             self.running = False
             server = self._server_socket
+            thread = self._thread
         self._close_all_peers()
         if server:
             try:
                 server.close()
             except OSError:
                 pass
+        if thread and thread is not threading.current_thread() and thread.is_alive():
+            thread.join(timeout=2.0)
+        with self._lock:
+            if thread is None or not thread.is_alive():
+                self._thread = None
         self.on_status("stopped")
         self.on_log("[Mixput] Sharing stopped.")

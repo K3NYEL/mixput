@@ -1,6 +1,5 @@
 """Authenticated Mixput client with server-managed horizontal topology and group chat."""
 import base64
-import ipaddress
 import os
 import socket
 import threading
@@ -29,6 +28,7 @@ class NetworkClient:
         self._channel = None
         self._thread = None
         self._stop_event = threading.Event()
+        self._terminal_error = False
         self._lock = threading.RLock()
         self._control_owner = "host"
         self._ownership_epoch = -1
@@ -37,17 +37,10 @@ class NetworkClient:
         self._device_id = self.pairings.device_id
         self._index = 1
         self._devices = []
-        self._virtual_ip = None
-        self._virtual_network = None
         if self.input_backend is not None:
             self.input_backend.on_event = self._send_input
             self.input_backend.on_edge = self._on_local_edge
             self.input_backend.on_toggle_local = self.toggle_local_mode
-
-    @property
-    def virtual_ip(self):
-        with self._lock:
-            return self._virtual_ip
 
     @property
     def local_mode(self):
@@ -65,6 +58,20 @@ class NetworkClient:
             self._local_mode = enabled
         if self.input_backend:
             self.input_backend.release_all()
+        with self._lock:
+            channel = self._channel
+            epoch = self._ownership_epoch
+        if channel:
+            try:
+                if not channel.send({
+                    "version": PROTOCOL_VERSION,
+                    "kind": "local_mode",
+                    "enabled": enabled,
+                    "ownership_epoch": epoch,
+                }):
+                    self.on_message("[Mixput] The session closed before local mode could synchronize.")
+            except (OSError, ProtocolError, ValueError) as error:
+                self.on_message(f"[Mixput] Could not synchronize local mode: {error}")
         self.on_message(f"[Mixput] Local mode {'enabled' if enabled else 'disabled'}.")
         self.on_session({
             "devices": self._devices, "owner": self._control_owner,
@@ -73,16 +80,24 @@ class NetworkClient:
         return True
 
     def connect(self, host, port=8080):
-        if self.running:
-            return False
+        with self._lock:
+            if self.running or (self._thread and self._thread.is_alive()):
+                return False
         if not host:
             self.on_message("[Mixput] Select or enter the host laptop address.")
             return False
-        self.running = True
-        self._stop_event.clear()
-        self.on_status("connecting")
-        self._thread = threading.Thread(target=self._run, args=(host, port), daemon=True, name="MixputClient")
-        self._thread.start()
+        with self._lock:
+            if self.running or (self._thread and self._thread.is_alive()):
+                return False
+            self.running = True
+            self._stop_event.clear()
+            self._terminal_error = False
+            self.on_status("connecting")
+            self._thread = threading.Thread(
+                target=self._run, args=(host, port),
+                daemon=True, name="MixputClient",
+            )
+            self._thread.start()
         return True
 
     def _send_input(self, event):
@@ -101,10 +116,11 @@ class NetworkClient:
         if channel is None:
             return
         try:
-            channel.send({
+            if not channel.send({
                 "version": PROTOCOL_VERSION, "kind": "control_switch",
                 "side": side, "ownership_epoch": self._ownership_epoch,
-            })
+            }):
+                self.on_message("[Mixput] The session closed before the desktop switch was sent.")
         except (OSError, ProtocolError, ValueError) as error:
             self.on_message(f"[Mixput] Could not switch device: {error}")
 
@@ -119,8 +135,7 @@ class NetworkClient:
         if not channel:
             return False
         try:
-            channel.send({"version": PROTOCOL_VERSION, "kind": "chat", "text": text})
-            return True
+            return bool(channel.send({"version": PROTOCOL_VERSION, "kind": "chat", "text": text}))
         except (OSError, ProtocolError, ValueError):
             return False
 
@@ -155,27 +170,6 @@ class NetworkClient:
             if epoch < self._ownership_epoch:
                 return False
             previous_epoch = self._ownership_epoch
-        network_cidr = message.get("virtual_network")
-        try:
-            virtual_network = ipaddress.ip_network(network_cidr, strict=True)
-        except (TypeError, ValueError) as error:
-            raise ProtocolError("The server provided an invalid Mixput virtual network.") from error
-        if virtual_network.version != 4 or not virtual_network.is_private:
-            raise ProtocolError("The Mixput virtual network must use a private IPv4 range.")
-        virtual_addresses = []
-        for device in devices:
-            if not isinstance(device, dict):
-                raise ProtocolError("Invalid device entry in server topology.")
-            try:
-                virtual_address = ipaddress.ip_address(device.get("virtual_ip", ""))
-            except ValueError as error:
-                raise ProtocolError("The server provided an invalid Mixput virtual IP.") from error
-            if (virtual_address.version != 4 or virtual_address not in virtual_network
-                    or virtual_address in (virtual_network.network_address, virtual_network.broadcast_address)):
-                raise ProtocolError("The server provided an out-of-range Mixput virtual IP.")
-            virtual_addresses.append(str(virtual_address))
-        if len(set(virtual_addresses)) != len(virtual_addresses):
-            raise ProtocolError("The server assigned duplicate Mixput virtual IP addresses.")
         valid_owners = {device.get("id") for device in devices}
         if owner not in valid_owners:
             raise ProtocolError("The server selected an unknown input owner.")
@@ -186,8 +180,6 @@ class NetworkClient:
             old_owner = self._control_owner
             self._devices = devices
             self._index = int(own.get("index", 1))
-            self._virtual_ip = str(own["virtual_ip"])
-            self._virtual_network = str(virtual_network)
             self._control_owner = owner
             self._ownership_epoch = epoch
             if epoch != previous_epoch:
@@ -203,8 +195,6 @@ class NetworkClient:
         self.on_session({
             "devices": devices, "owner": owner, "index": self._index,
             "local_mode": self.local_mode,
-            "virtual_ip": self.virtual_ip,
-            "virtual_network": self._virtual_network,
             "ownership_epoch": self._ownership_epoch,
         })
         return True
@@ -234,7 +224,9 @@ class NetworkClient:
         delay = 1.0
         while self.running and not self._stop_event.is_set():
             self._run_session(host, port)
-            if not self.running or self._stop_event.is_set():
+            if not self.running or self._stop_event.is_set() or self._terminal_error:
+                if self._terminal_error:
+                    self.running = False
                 break
             self.on_status("reconnecting")
             self.on_message(f"[Mixput] Connection lost. Retrying in {delay:.0f}s...")
@@ -295,13 +287,20 @@ class NetworkClient:
                 elif kind == "input":
                     if not self._apply_remote_input(message):
                         self.on_message("[Mixput] Rejected stale, unauthorized, or invalid input event.")
+                elif kind == "release_inputs":
+                    if self.input_backend:
+                        self.input_backend.release_all()
                 elif kind == "chat":
                     sender, text = message.get("sender"), message.get("text")
                     if isinstance(sender, str) and isinstance(text, str) and len(text) <= MAX_CHAT_LENGTH:
                         self.on_chat(message)
                 elif kind == "disconnect":
                     break
-        except (OSError, ProtocolError, ValueError, KeyError, RuntimeError, TypeError) as error:
+        except ProtocolError as error:
+            self._terminal_error = True
+            if self.running:
+                self.on_message(f"[Mixput] Connection rejected: {error}")
+        except (OSError, ValueError, KeyError, RuntimeError, TypeError) as error:
             if self.running:
                 self.on_message(f"[Mixput] Connection failed: {error}")
         finally:
@@ -310,8 +309,6 @@ class NetworkClient:
                 self._ownership_epoch = -1
                 self._last_input_sequence = 0
                 self._devices = []
-                self._virtual_ip = None
-                self._virtual_network = None
                 self._local_mode = False
             if self.input_backend:
                 self.input_backend.stop_capture()
@@ -328,19 +325,27 @@ class NetworkClient:
             self.on_session({"devices": [], "owner": "host", "index": 1})
 
     def disconnect(self):
-        self.running = False
-        self._stop_event.set()
-        channel = self._channel
+        with self._lock:
+            self.running = False
+            self._stop_event.set()
+            channel = self._channel
+            sock = self.sock
+            thread = self._thread
         if channel:
             try:
                 channel.send({"version": PROTOCOL_VERSION, "kind": "disconnect"})
             except (OSError, ProtocolError):
                 pass
             channel.close()
-        elif self.sock:
+        elif sock:
             try:
-                self.sock.shutdown(socket.SHUT_RDWR)
+                sock.shutdown(socket.SHUT_RDWR)
             except OSError:
                 pass
-            self.sock.close()
+            try:
+                sock.close()
+            except OSError:
+                pass
+        if thread and thread is not threading.current_thread() and thread.is_alive():
+            thread.join(timeout=2.0)
         self.on_status("disconnected")

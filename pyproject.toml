@@ -12,6 +12,7 @@ dependencies = [
     "pillow>=13.0.0",
     "psutil>=7.2.2",
     "pynput>=1.7.7",
+    "python-xlib>=0.33; sys_platform == 'linux'",
     "cryptography>=44.0.0",
     "requests>=2.34.2",
     "tkinter-icons>=5.1.0",
@@ -24,6 +25,10 @@ mixput = "mixput:main"
 [build-system]
 requires = ["uv_build>=0.13.8,<0.14.0"]
 build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = ["mixput", "app"]
+namespace = true
 
 [dependency-groups]
 dev = [

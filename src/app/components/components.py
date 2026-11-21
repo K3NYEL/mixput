@@ -155,7 +155,13 @@ class App(tk.Canvas):
         tk.Label(
             parent, text=title, font=("Arial", 20, "bold"),
             bg=c["bg_main"], fg=c["text_primary"],
-        ).pack(anchor=tk.W, pady=(12, 14))
+        ).pack(anchor=tk.W, pady=(12, 2))
+        if subtitle:
+            tk.Label(
+                parent, text=subtitle, font=("Arial", 9),
+                bg=c["bg_main"], fg=c["text_secondary"],
+                justify=tk.LEFT, wraplength=760,
+            ).pack(anchor=tk.W, pady=(0, 12))
 
     def _card(self, parent, title, detail):
         c = self.CURRENT_THEME
@@ -287,6 +293,11 @@ class App(tk.Canvas):
             font=("Arial", 9), bg=c["bg_main"], fg=c["text_secondary"],
         )
         self.discovery_status.pack(anchor=tk.W, pady=(0, 8))
+        self.device_connection_status = tk.Label(
+            discovered, text="Connection: not connected",
+            font=("Arial", 9, "bold"), bg=c["bg_main"], fg=c["text_secondary"],
+        )
+        self.device_connection_status.pack(anchor=tk.W, pady=(0, 8))
         list_frame = tk.Frame(
             discovered, bg=c["bg_secondary"],
             highlightbackground=c["border"], highlightthickness=1,
@@ -314,6 +325,35 @@ class App(tk.Canvas):
             actions, text="Only devices advertising an active Mixput server can be connected.",
             font=("Arial", 8), bg=c["bg_main"], fg=c["text_secondary"],
         ).pack(side=tk.LEFT, padx=10)
+
+        tk.Label(
+            discovered, text="Connect manually",
+            font=("Arial", 12, "bold"), bg=c["bg_main"], fg=c["text_primary"],
+        ).pack(anchor=tk.W, pady=(16, 6))
+        manual_row = tk.Frame(discovered, bg=c["bg_main"])
+        manual_row.pack(fill=tk.X)
+        self.manual_host_entry = tk.Entry(
+            manual_row, width=22, relief=tk.FLAT,
+            bg=c["bg_secondary"], fg=c["text_primary"],
+            insertbackground=c["text_primary"],
+        )
+        self.manual_host_entry.insert(0, "")
+        self.manual_host_entry.pack(side=tk.LEFT, ipady=7, padx=(0, 8))
+        self.manual_host_entry.bind("<Return>", lambda _event: self._connect_manual_device())
+        self.manual_port_entry = tk.Entry(
+            manual_row, width=7, relief=tk.FLAT,
+            bg=c["bg_secondary"], fg=c["text_primary"],
+            insertbackground=c["text_primary"],
+        )
+        self.manual_port_entry.insert(0, "8080")
+        self.manual_port_entry.pack(side=tk.LEFT, ipady=7, padx=(0, 8))
+        self.manual_connect_button = tk.Button(
+            manual_row, text="Connect", command=self._connect_manual_device,
+            relief=tk.FLAT, cursor="hand2", padx=14, pady=7,
+            bg=c["border"], fg=c["text_primary"],
+            activebackground=c["border"], activeforeground=c["text_primary"],
+        )
+        self.manual_connect_button.pack(side=tk.LEFT)
 
         settings = self._page("settings")
         self._heading(
@@ -362,6 +402,18 @@ class App(tk.Canvas):
         self.home_count_value.configure(text=f"{len(devices)} / 4 devices")
         row = "  →  ".join(item.get("name", "Device") for item in sorted(devices, key=lambda item: item.get("index", 0)))
         self.home_devices_value.configure(text=row)
+        if hasattr(self, "device_connection_status"):
+            if client == "connected":
+                connection_text = "Connection: connected to host"
+            elif client == "connecting":
+                connection_text = "Connection: requesting access"
+            elif client == "reconnecting":
+                connection_text = "Connection: reconnecting"
+            elif server in ("listening", "connected", "pairing", "authenticating"):
+                connection_text = "Connection: this computer is sharing"
+            else:
+                connection_text = "Connection: not connected"
+            self.device_connection_status.configure(text=connection_text)
 
     def _queue_dashboard_activity(self, message):
         try:
@@ -378,7 +430,7 @@ class App(tk.Canvas):
     def _append_server_log(self, message):
         try:
             self.server_log_view.configure(state=tk.NORMAL)
-            self.server_log_view.insert(tk.END, message + "\\n")
+            self.server_log_view.insert(tk.END, message + "\n")
             lines = int(self.server_log_view.index("end-1c").split(".")[0])
             if lines > 500:
                 self.server_log_view.delete("1.0", f"{lines - 500}.0")
@@ -471,6 +523,20 @@ class App(tk.Canvas):
             state=tk.NORMAL if device["sharing"] else tk.DISABLED
         )
 
+    def _connect_manual_device(self):
+        host = self.manual_host_entry.get().strip()
+        try:
+            port = int(self.manual_port_entry.get().strip())
+            if not 1 <= port <= 65535:
+                raise ValueError("Port must be between 1 and 65535.")
+        except ValueError as error:
+            messagebox.showerror("Connection settings", str(error), parent=self)
+            return
+        if not host:
+            messagebox.showinfo("Connect to host", "Enter the host computer's LAN IPv4 address.", parent=self)
+            return
+        self.connection_panel.server_preferences.connect_discovered_device(host, port)
+
     def _use_selected_device(self):
         selected = self.devices_list.curselection()
         if not selected or selected[0] >= len(self.discovered_devices):
@@ -479,6 +545,9 @@ class App(tk.Canvas):
         if not device["sharing"]:
             return
         panel = self.connection_panel.server_preferences
+        if panel.server.running:
+            messagebox.showinfo("Mixput", "Stop this computer's server before joining another host.", parent=self)
+            return
         if panel._client_status == "connected" or panel.client.running:
             messagebox.showinfo("Mixput", "This laptop is already connected to another Mixput server.", parent=self)
             return
@@ -576,9 +645,19 @@ class App(tk.Canvas):
             except tk.TclError:
                 continue
 
-    def destroy(self):
+    def shutdown(self):
+        if getattr(self, "_shutdown", False):
+            return
+        self._shutdown = True
         if hasattr(self, "discovery"):
             self.discovery.stop()
+        panel = getattr(self, "connection_panel", None)
+        preferences = getattr(panel, "server_preferences", None)
+        if preferences is not None:
+            preferences.shutdown()
+
+    def destroy(self):
+        self.shutdown()
         super().destroy()
 
     def _show_update_diagnostics(self):
@@ -616,7 +695,7 @@ class App(tk.Canvas):
         if error:
             if manual:
                 messagebox.showerror(
-                    "Update error", f"Could not check for updates:\\n{error}",
+                    "Update error", f"Could not check for updates:\n{error}",
                     parent=self.winfo_toplevel(),
                 )
             return
@@ -630,8 +709,8 @@ class App(tk.Canvas):
         version = info.get("version", "unknown")
         if messagebox.askyesno(
             "Update available",
-            f"A new Mixput version is available: {version}\\n\\n"
-            f"Current version: {self.current_version}\\n\\n"
+            f"A new Mixput version is available: {version}\n\n"
+            f"Current version: {self.current_version}\n\n"
             "Download and install this update? Mixput will restart.",
             parent=self.winfo_toplevel(),
         ):

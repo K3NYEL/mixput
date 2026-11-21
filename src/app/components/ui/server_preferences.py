@@ -4,7 +4,7 @@ from tkinter import messagebox
 
 from app.components import theme
 from app.components.core.input_backend import InputBackend
-from app.components.core.network import get_network_details
+from app.components.core.network import get_active_network_info
 from app.components.core.network_client import NetworkClient
 from app.components.core.network_server import NetworkServer
 
@@ -69,7 +69,7 @@ class ServerPreferences(tk.Frame):
         network_frame = tk.Frame(host_frame, bg=c["bg_secondary"])
         network_frame.pack(fill=tk.X, pady=(2, 10))
         self.network_value_labels = {}
-        for label in ("Mixput virtual IP", "Transport IP address", "Subnet mask", "DNS servers", "Network interface"):
+        for label in ("Local IP address", "Network interface"):
             row = tk.Frame(network_frame, bg=c["bg_secondary"])
             row.pack(fill=tk.X, pady=2)
             tk.Label(
@@ -85,8 +85,7 @@ class ServerPreferences(tk.Frame):
             value.pack(side=tk.LEFT, fill=tk.X, expand=True)
             self.network_value_labels[label] = value
         self.local_ip = "0.0.0.0"
-        self.virtual_ip = self.server.virtual_network.host_ip
-        self.local_ip_label = self.network_value_labels["Transport IP address"]
+        self.local_ip_label = self.network_value_labels["Local IP address"]
         self.refresh_network_button = self._button(
             host_frame, "Refresh network information", self.refresh_network_info
         )
@@ -176,20 +175,19 @@ class ServerPreferences(tk.Frame):
         devices = state.get("devices", [])
         if not devices:
             self.devices_label.configure(text="Connected desktops: this computer · waiting for devices")
+            self.on_state_changed({
+                "devices": [], "owner": state.get("owner", "host"),
+                "server_status": self._server_status,
+                "client_status": self._client_status,
+                "port": self._active_port, "local_ip": self.local_ip,
+            })
             return
         names = [str(item.get("name", "Device")) for item in sorted(devices, key=lambda d: d.get("index", 0))]
         self.devices_label.configure(text="Connected desktops: " + "  →  ".join(names))
-        assigned_ip = state.get("virtual_ip")
-        if assigned_ip:
-            self.virtual_ip = str(assigned_ip)
-            virtual_label = self.network_value_labels.get("Mixput virtual IP")
-            if virtual_label is not None:
-                virtual_label.configure(text=self.virtual_ip)
         self.on_state_changed({
             "devices": devices, "owner": state.get("owner", "host"),
             "server_status": self._server_status, "client_status": self._client_status,
             "port": self._active_port, "local_ip": self.local_ip,
-            "virtual_ip": state.get("virtual_ip", self.virtual_ip),
         })
 
     def send_chat_message(self, text):
@@ -237,7 +235,7 @@ class ServerPreferences(tk.Frame):
     def _ask_pairing_request(self, request):
         approved = messagebox.askyesno(
             "Mixput device pairing",
-            f'{request["name"]} ({request["ip"]}) wants to join this Mixput session and receive shared keyboard and mouse input.\\n\\nAllow this device?',
+            f'{request["name"]} ({request["ip"]}) wants to join this Mixput session and receive shared keyboard and mouse input.\n\nAllow this device?',
             parent=self.winfo_toplevel(),
         )
         self.server.approve_pairing(request["request_id"], approved)
@@ -253,10 +251,9 @@ class ServerPreferences(tk.Frame):
         self.authorized_list.delete(0, tk.END)
         self._authorized_devices = self.server.pairings.list_authorized_clients()
         for device in self._authorized_devices:
-            virtual_ip = device.get("virtual_ip", "Not assigned")
             self.authorized_list.insert(
                 tk.END,
-                f'{device.get("name", "Device")}  ·  Mixput {virtual_ip}  ·  {device.get("address", "")}'
+                f'{device.get("name", "Device")}  ·  {device.get("address", "")}'
             )
 
     def revoke_selected_device(self):
@@ -273,20 +270,11 @@ class ServerPreferences(tk.Frame):
             self.server.revoke_device(device["id"])
             self._refresh_authorized_devices()
 
-    def _current_virtual_ip(self):
-        if self._server_status in ("listening", "connected", "pairing", "authenticating"):
-            return self.server.virtual_network.host_ip
-        return self.client.virtual_ip or self.server.virtual_network.host_ip
-
     def refresh_network_info(self):
-        interface, local_ip, subnet_mask, dns_servers = get_network_details()
+        interface, local_ip = get_active_network_info()
         self.local_ip = local_ip
-        self.virtual_ip = self._current_virtual_ip()
         values = {
-            "Mixput virtual IP": self.virtual_ip,
-            "Transport IP address": local_ip,
-            "Subnet mask": subnet_mask,
-            "DNS servers": dns_servers,
+            "Local IP address": local_ip,
             "Network interface": interface,
         }
         for label, value in values.items():
@@ -296,6 +284,12 @@ class ServerPreferences(tk.Frame):
         return values
 
     def start_server(self):
+        if self.client.running or (self.client._thread and self.client._thread.is_alive()):
+            messagebox.showinfo(
+                "Mixput", "Disconnect from the current host before starting a server on this computer.",
+                parent=self,
+            )
+            return
         available, reason = InputBackend.availability()
         if not available:
             messagebox.showerror("Input support unavailable", reason, parent=self)
@@ -316,6 +310,11 @@ class ServerPreferences(tk.Frame):
             self.start_button.configure(state=tk.DISABLED)
             self.stop_button.configure(state=tk.NORMAL)
             self._queue_log(f"[Mixput] Sharing is available at {local_ip}:{port}.")
+        else:
+            messagebox.showinfo(
+                "Mixput server", "The previous server session is still shutting down. Try again in a moment.",
+                parent=self,
+            )
 
     def stop_server(self):
         self.server.stop()
@@ -324,7 +323,13 @@ class ServerPreferences(tk.Frame):
         self.stop_button.configure(state=tk.DISABLED)
 
     def connect_discovered_device(self, address, port):
-        """Connect to a discovered host without adding client controls to Connection."""
+        """Connect to a discovered host without turning this computer into a second server."""
+        if self.server.running or (self.server._thread and self.server._thread.is_alive()):
+            messagebox.showinfo(
+                "Mixput", "Stop this computer's server before joining another host.",
+                parent=self,
+            )
+            return False
         available, reason = InputBackend.availability()
         if not available:
             messagebox.showerror("Input support unavailable", reason, parent=self)
@@ -340,7 +345,13 @@ class ServerPreferences(tk.Frame):
         except (TypeError, ValueError) as error:
             messagebox.showerror("Connection settings", str(error), parent=self)
             return False
-        return self.client.connect(host, port)
+        connected = self.client.connect(host, port)
+        if not connected:
+            messagebox.showinfo(
+                "Mixput", "A client connection is already starting or shutting down.",
+                parent=self,
+            )
+        return connected
 
     def disconnect_client(self):
         self.client.disconnect()
@@ -373,6 +384,7 @@ class ServerPreferences(tk.Frame):
         self.on_sharing_changed(active, self._active_port)
         self.start_button.configure(state=tk.DISABLED if active else tk.NORMAL)
         self.stop_button.configure(state=tk.NORMAL if active else tk.DISABLED)
+        self.server_port.configure(state=tk.DISABLED if active else tk.NORMAL)
         self._refresh_status()
 
     def _queue_client_status(self, status):
@@ -407,11 +419,11 @@ class ServerPreferences(tk.Frame):
             "connected": "Connected",
         }
         server = server_labels.get(self._server_status, self._server_status.title())
-        self.status_label.configure(text=f"Mixput server: {server}")
-        self.virtual_ip = self._current_virtual_ip()
-        virtual_label = self.network_value_labels.get("Mixput virtual IP")
-        if virtual_label is not None:
-            virtual_label.configure(text=self.virtual_ip)
+        if self._server_status == "stopped" and self._client_status != "disconnected":
+            client = client_labels.get(self._client_status, self._client_status.title())
+            self.status_label.configure(text=f"Mixput client: {client}")
+        else:
+            self.status_label.configure(text=f"Mixput server: {server}")
         devices = self.server.connected_devices if self.server.running else (
             self.client._devices if self._client_status == "connected" else [])
         owner = self.server._control_owner if self.server.running else self.client._control_owner
@@ -419,7 +431,6 @@ class ServerPreferences(tk.Frame):
             "devices": devices, "owner": owner,
             "server_status": self._server_status, "client_status": self._client_status,
             "port": self._active_port, "local_ip": self.local_ip,
-            "virtual_ip": self.client.virtual_ip if self._client_status == "connected" else self.virtual_ip,
         })
 
     def apply_theme(self, colors):
@@ -449,12 +460,18 @@ class ServerPreferences(tk.Frame):
             except tk.TclError:
                 continue
 
-    def destroy(self):
+    def shutdown(self):
+        if getattr(self, "_shutdown", False):
+            return
+        self._shutdown = True
         self.client.disconnect()
         self.server.stop()
         self.on_sharing_changed(False, self._active_port)
         self.host_input.close()
         self.remote_input.close()
+
+    def destroy(self):
+        self.shutdown()
         super().destroy()
 
 
