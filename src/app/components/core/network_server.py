@@ -40,6 +40,8 @@ class NetworkServer:
         self._server_socket = None
         self._thread = None
         self._lock = threading.RLock()
+        # Bound unauthenticated handshakes so LAN scans cannot spawn unbounded threads.
+        self._handshake_slots = threading.BoundedSemaphore(8)
         self._capture = None
         self._pending = {}
         self._peers = {}
@@ -311,8 +313,23 @@ class NetworkServer:
                     if self.running:
                         raise
                     break
-                threading.Thread(target=self._handle_peer, args=(connection, address),
-                                 daemon=True, name="MixputPeer").start()
+                if not self._handshake_slots.acquire(blocking=False):
+                    try:
+                        connection.close()
+                    except OSError:
+                        pass
+                    continue
+                try:
+                    connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                    connection.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                except OSError:
+                    pass
+                threading.Thread(
+                    target=self._handle_peer_guarded,
+                    args=(connection, address),
+                    daemon=True,
+                    name="MixputPeer",
+                ).start()
         except OSError as error:
             if self.running:
                 self.on_log(f"[Mixput] Server error: {error}")
@@ -340,6 +357,12 @@ class NetworkServer:
         finally:
             with self._lock:
                 self._pending.pop(request_id, None)
+
+    def _handle_peer_guarded(self, connection, address):
+        try:
+            self._handle_peer(connection, address)
+        finally:
+            self._handshake_slots.release()
 
     def _handle_peer(self, connection, address):
         channel = None
