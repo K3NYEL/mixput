@@ -71,10 +71,27 @@ class InputBackend:
 
     def _on_x11_edge(self, side):
         with self._lock:
-            if not self._capture_enabled or not self._exclusive_enabled or self._edge_latched:
+            if (not self._capture_enabled or not self._exclusive_enabled
+                    or self._relative_mode or self._edge_latched):
                 return
             self._edge_latched = True
         self.on_edge(side)
+
+    def _edge_for_position(self, position):
+        """Return an edge only on the active screen, never on a parked source cursor."""
+        if self._relative_mode or not self._edge_sides or not self._screen_size or self._edge_latched:
+            return None
+        width, height = self._screen_size
+        x, y = position
+        side = (
+            "right" if "right" in self._edge_sides and x >= width - self._edge_margin
+            else "left" if "left" in self._edge_sides and x <= self._edge_margin - 1
+            else None
+        )
+        if side and 0 <= y < height:
+            self._edge_latched = True
+            return side
+        return None
 
     def _load(self):
         available, reason = self.availability()
@@ -146,14 +163,10 @@ class InputBackend:
                 if self._suppress_move:
                     self._suppress_move = False
                     return
-                if self._edge_sides and self._screen_size and not self._edge_latched:
-                    width, height = self._screen_size
-                    side = "right" if "right" in self._edge_sides and position[0] >= width - self._edge_margin else (
-                        "left" if "left" in self._edge_sides and position[0] <= self._edge_margin - 1 else None)
-                    if side and 0 <= position[1] < height:
-                        self._edge_latched = True
-                        self.on_edge(side)
-                        return
+                side = self._edge_for_position(position)
+                if side:
+                    self.on_edge(side)
+                    return
                 if previous is not None and self._exclusive_enabled:
                     dx, dy = position[0] - previous[0], position[1] - previous[1]
                     if dx or dy:
@@ -221,13 +234,17 @@ class InputBackend:
                 return False
             self._exclusive_enabled = requested
             if self._x11_grabber:
-                self._x11_grabber.configure_edges(self._edge_sides, self._screen_size, self._edge_margin)
+                edge_sides = set() if self._relative_mode else self._edge_sides
+                self._x11_grabber.configure_edges(edge_sides, self._screen_size, self._edge_margin)
             return True
 
     def set_relative_mode(self, enabled):
         with self._lock:
             self._relative_mode = bool(enabled)
             self._last_position = None
+            if self._x11_grabber:
+                edge_sides = set() if self._relative_mode else self._edge_sides
+                self._x11_grabber.configure_edges(edge_sides, self._screen_size, self._edge_margin)
 
     def park_cursor(self):
         try:
