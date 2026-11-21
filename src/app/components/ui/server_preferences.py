@@ -1,9 +1,12 @@
 import ipaddress
+import socket
+import threading
 import tkinter as tk
 from tkinter import messagebox
 
 from app.components import theme
 from app.components.core.input_backend import InputBackend
+from app.components.core.device_discovery import DeviceDiscovery
 from app.components.core.network import get_active_network_info
 from app.components.core.network_client import NetworkClient
 from app.components.core.network_server import NetworkServer
@@ -37,6 +40,14 @@ class ServerPreferences(tk.Frame):
             on_session=self._queue_session,
             input_backend=self.remote_input,
         )
+        self.discovery = DeviceDiscovery(
+            on_devices=self._queue_discovered_devices,
+            tcp_port=8080,
+        )
+        self._discovered_devices = []
+        self._auto_peer_id = None
+        self._auto_endpoint = None
+        self._auto_lock = threading.RLock()
         self._server_status = "stopped"
         self._client_status = "disconnected"
         self._active_port = 8080
@@ -46,6 +57,9 @@ class ServerPreferences(tk.Frame):
         self.on_activity = lambda message: None
         self.on_sharing_changed = lambda sharing, port: None
         self._build()
+        # Every running Mixput instance listens and announces itself. A stable
+        # identity election chooses the same session coordinator on every peer.
+        self.after(300, self.start_server)
 
     def _build(self):
         c = self.colors
@@ -62,7 +76,7 @@ class ServerPreferences(tk.Frame):
         cards.columnconfigure(0, weight=1)
 
         host_frame = tk.LabelFrame(
-            cards, text=" SHARE THIS COMPUTER ", bg=c["bg_secondary"],
+            cards, text=" MIXPUT LOCAL NETWORK ", bg=c["bg_secondary"],
             fg=c["text_primary"], padx=12, pady=10, font=("Arial", 9, "bold")
         )
         host_frame.grid(row=0, column=0, columnspan=2, sticky="nsew", padx=0)
@@ -100,14 +114,14 @@ class ServerPreferences(tk.Frame):
 
         host_actions = tk.Frame(host_frame, bg=c["bg_secondary"])
         host_actions.pack(fill=tk.X, pady=(0, 10))
-        self.start_button = self._button(host_actions, "Start server", self.start_server)
+        self.start_button = self._button(host_actions, "Start Mixput", self.start_server)
         self.start_button.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-        self.stop_button = self._button(host_actions, "Stop server", self.stop_server)
+        self.stop_button = self._button(host_actions, "Stop Mixput", self.stop_server)
         self.stop_button.configure(state=tk.DISABLED)
         self.stop_button.pack(side=tk.LEFT)
 
         tk.Label(
-            host_frame, text="Authorized devices (up to 3 connected)", bg=c["bg_secondary"],
+            host_frame, text="Devices authorized on this computer (up to 3)", bg=c["bg_secondary"],
             fg=c["text_secondary"], font=("Arial", 8, "bold")
         ).pack(anchor=tk.W)
         self.authorized_list = tk.Listbox(
@@ -121,7 +135,7 @@ class ServerPreferences(tk.Frame):
         self._refresh_authorized_devices()
 
         tk.Label(
-            self, text="This laptop will act as the Mixput host. Other laptops can discover this server on the same local network and request access.",
+            self, text="Mixput discovers other running computers automatically. All computers run the same service; a coordinator is elected automatically for each shared session. No manual host/client selection or IP entry is required.",
             bg=c["bg_secondary"], fg=c["text_secondary"], font=("Arial", 9),
             justify=tk.LEFT, wraplength=720,
         ).pack(fill=tk.X, padx=16, pady=(0, 10))
@@ -132,11 +146,18 @@ class ServerPreferences(tk.Frame):
         )
         self.status_label.pack(fill=tk.X, padx=12, pady=(0, 8))
         self.devices_label = tk.Label(
-            self, text="Connected desktops: this computer · waiting for devices",
+            self, text="Network: discovering other Mixput computers…",
             bg=c["bg_secondary"], fg=c["text_secondary"], font=("Arial", 8),
             anchor=tk.W,
         )
         self.devices_label.pack(fill=tk.X, padx=14, pady=(0, 6))
+
+        self.discovery_label = tk.Label(
+            self, text="Discovered devices: none yet",
+            bg=c["bg_secondary"], fg=c["text_secondary"], font=("Arial", 8),
+            anchor=tk.W,
+        )
+        self.discovery_label.pack(fill=tk.X, padx=14, pady=(0, 8))
 
         log_frame = tk.Frame(self, bg=c["bg_secondary"])
         log_frame.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
@@ -284,11 +305,11 @@ class ServerPreferences(tk.Frame):
         return values
 
     def start_server(self):
-        if self.client.running or (self.client._thread and self.client._thread.is_alive()):
-            messagebox.showinfo(
-                "Mixput", "Disconnect from the current host before starting a server on this computer.",
-                parent=self,
-            )
+        """Start the same discovery/listening service on every computer."""
+        if self.server.running or (self.server._thread and self.server._thread.is_alive()):
+            if not self.discovery.running:
+                self.discovery.set_endpoint(tcp_port=self._active_port, sharing=True)
+                self.discovery.start()
             return
         available, reason = InputBackend.availability()
         if not available:
@@ -306,10 +327,15 @@ class ServerPreferences(tk.Frame):
             return
         if self.server.start("0.0.0.0", port):
             self._active_port = port
+            self.discovery.set_endpoint(tcp_port=port, sharing=True)
+            self.discovery.start()
             self.on_sharing_changed(True, port)
             self.start_button.configure(state=tk.DISABLED)
             self.stop_button.configure(state=tk.NORMAL)
-            self._queue_log(f"[Mixput] Sharing is available at {local_ip}:{port}.")
+            self._queue_log(
+                f"[Mixput] Running on {local_ip}:{port}. Discovering peers and electing "
+                "the session coordinator automatically."
+            )
         else:
             messagebox.showinfo(
                 "Mixput server", "The previous server session is still shutting down. Try again in a moment.",
@@ -317,10 +343,78 @@ class ServerPreferences(tk.Frame):
             )
 
     def stop_server(self):
+        self.discovery.set_endpoint(sharing=False)
+        self.discovery.stop()
+        self.client.disconnect()
         self.server.stop()
+        with self._auto_lock:
+            self._auto_peer_id = None
+            self._auto_endpoint = None
         self.on_sharing_changed(False, self._active_port)
         self.start_button.configure(state=tk.NORMAL)
         self.stop_button.configure(state=tk.DISABLED)
+
+    def _queue_discovered_devices(self, devices):
+        try:
+            self.after(0, self._apply_discovered_devices, devices)
+        except tk.TclError:
+            pass
+
+    def _apply_discovered_devices(self, devices):
+        """Elect one deterministic coordinator and connect without user IP entry."""
+        self._discovered_devices = [
+            item for item in devices
+            if isinstance(item, dict) and item.get("sharing") is True
+        ]
+        names = [
+            f'{item.get("name", "Device")} ({item.get("ip", "?")})'
+            for item in self._discovered_devices
+        ]
+        if hasattr(self, "discovery_label"):
+            self.discovery_label.configure(
+                text="Discovered devices: " + (" · ".join(names) if names else "none yet")
+            )
+        if not self.server.running:
+            return
+
+        own_id = self.server.pairings.device_id
+        candidates = [{"id": own_id, "local": True}]
+        candidates.extend(
+            {"id": item["id"], "local": False, "device": item}
+            for item in self._discovered_devices
+            if isinstance(item.get("id"), str) and len(item["id"]) == 32
+        )
+        coordinator = min(candidates, key=lambda item: item["id"])
+        if coordinator["local"]:
+            if self.client.running or (self.client._thread and self.client._thread.is_alive()):
+                self.client.disconnect()
+            with self._auto_lock:
+                self._auto_peer_id = None
+                self._auto_endpoint = None
+            self._queue_log("[Mixput] This computer was elected session coordinator.")
+            return
+
+        peer = coordinator["device"]
+        peer_id = peer["id"]
+        endpoint = (peer["ip"], int(peer["port"]))
+        with self._auto_lock:
+            if self._auto_peer_id == peer_id and self._auto_endpoint == endpoint:
+                return
+            previous = self._auto_peer_id
+            self._auto_peer_id = peer_id
+            self._auto_endpoint = endpoint
+        if previous is not None or self.client.running:
+            self.client.disconnect()
+        self._queue_log(
+            f"[Mixput] Coordinator elected: {peer.get('name', 'Device')}. "
+            "Connecting automatically…"
+        )
+        if not self.client.connect(*endpoint):
+            # A concurrent discovery update may arrive while the old client thread
+            # is shutting down. The next discovery tick retries this same endpoint.
+            with self._auto_lock:
+                self._auto_peer_id = None
+                self._auto_endpoint = None
 
     def connect_discovered_device(self, address, port):
         """Connect to a discovered host without turning this computer into a second server."""
@@ -464,6 +558,7 @@ class ServerPreferences(tk.Frame):
         if getattr(self, "_shutdown", False):
             return
         self._shutdown = True
+        self.discovery.stop()
         self.client.disconnect()
         self.server.stop()
         self.on_sharing_changed(False, self._active_port)
