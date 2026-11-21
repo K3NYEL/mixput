@@ -433,7 +433,7 @@ class NetworkServer:
                 devices = self._device_snapshot_locked()
             channel.send({"version": PROTOCOL_VERSION, "kind": "hello_ack"})
             self._send_state(peer, devices, owner)
-            connection.settimeout(0.5)
+            connection.settimeout(None)
             if self._capture and len(devices) == 2:
                 self._capture.start_capture()
                 self._capture.set_capture_enabled(True)
