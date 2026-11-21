@@ -172,6 +172,12 @@ class InputBackend:
                 self._x11_grabber.configure_edges(
                     edge_sides, self._screen_size, self._edge_margin
                 )
+                # X11GrabController is the single source of physical input on
+                # Linux. Starting pynput listeners as well duplicates events
+                # and can race with the native grab while ownership changes.
+                self._capture_enabled = True
+                self._edge_latched = False
+                return
 
             def is_enabled():
                 with self._lock:
@@ -299,10 +305,13 @@ class InputBackend:
             self._capture_enabled = bool(enabled)
             self._edge_latched = False
             self._last_position = None
+            grabber = self._x11_grabber
             if not self._capture_enabled:
                 self._exclusive_enabled = False
-                if self._x11_grabber:
-                    self._x11_grabber.set_grab(False)
+        # set_grab waits for the X11 worker. Never hold _lock here: callbacks
+        # from that worker also need _lock to finish dispatching input.
+        if not enabled and grabber:
+            grabber.set_grab(False)
 
     @property
     def exclusive_capture_error(self):
@@ -313,15 +322,23 @@ class InputBackend:
     def set_exclusive_capture(self, enabled):
         with self._lock:
             requested = bool(enabled and self._capture_enabled)
-            if self._x11_grabber and not self._x11_grabber.set_grab(requested):
+            grabber = self._x11_grabber
+            relative_mode = self._relative_mode
+            edge_sides = set() if relative_mode else self._edge_sides
+            screen_size = self._screen_size
+            edge_margin = self._edge_margin
+        # X11GrabController.set_grab() waits for its worker. Calling it while
+        # holding _lock deadlocks when that worker is dispatching an event.
+        if grabber and not grabber.set_grab(requested):
+            with self._lock:
                 self._exclusive_enabled = False
-                _LOG.error("Could not acquire X11 exclusive input capture: %s", self._x11_grabber.grab_error)
-                return False
+            _LOG.error("Could not acquire X11 exclusive input capture: %s", grabber.grab_error)
+            return False
+        with self._lock:
             self._exclusive_enabled = requested
-            if self._x11_grabber:
-                edge_sides = set() if self._relative_mode else self._edge_sides
-                self._x11_grabber.configure_edges(edge_sides, self._screen_size, self._edge_margin)
-            return True
+        if grabber:
+            grabber.configure_edges(edge_sides, screen_size, edge_margin)
+        return True
 
     def set_relative_mode(self, enabled):
         with self._lock:
@@ -377,9 +394,10 @@ class InputBackend:
             self._mouse_listener = None
             self._capture_enabled = False
             self._exclusive_enabled = False
-            if self._x11_grabber:
-                self._x11_grabber.set_grab(False)
+            grabber = self._x11_grabber
             self._last_position = None
+        if grabber:
+            grabber.set_grab(False)
         for listener in listeners:
             if listener:
                 listener.stop()
