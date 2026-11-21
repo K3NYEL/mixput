@@ -176,6 +176,13 @@ class ServerPreferences(tk.Frame):
         devices = state.get("devices", [])
         if not devices:
             self.devices_label.configure(text="Connected desktops: this computer · waiting for devices")
+            self.on_state_changed({
+                "devices": [], "owner": state.get("owner", "host"),
+                "server_status": self._server_status,
+                "client_status": self._client_status,
+                "port": self._active_port, "local_ip": self.local_ip,
+                "virtual_ip": self.virtual_ip,
+            })
             return
         names = [str(item.get("name", "Device")) for item in sorted(devices, key=lambda d: d.get("index", 0))]
         self.devices_label.configure(text="Connected desktops: " + "  →  ".join(names))
@@ -237,7 +244,7 @@ class ServerPreferences(tk.Frame):
     def _ask_pairing_request(self, request):
         approved = messagebox.askyesno(
             "Mixput device pairing",
-            f'{request["name"]} ({request["ip"]}) wants to join this Mixput session and receive shared keyboard and mouse input.\\n\\nAllow this device?',
+            f'{request["name"]} ({request["ip"]}) wants to join this Mixput session and receive shared keyboard and mouse input.\n\nAllow this device?',
             parent=self.winfo_toplevel(),
         )
         self.server.approve_pairing(request["request_id"], approved)
