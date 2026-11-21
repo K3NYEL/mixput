@@ -553,12 +553,16 @@ class NetworkServer:
                 except OSError:
                     pass
             removed = False
+            owner_disconnected = False
             with self._lock:
                 if client_id and client_id in self._peers and self._peers[client_id].get("channel") is channel:
                     del self._peers[client_id]
                     removed = True
                     if self._control_owner == client_id:
+                        # A vanished owner must never leave the host without input.
+                        # force() advances the ownership epoch so delayed packets are stale.
                         self._control_owner = "host"
+                        owner_disconnected = True
                     for index, peer_item in enumerate(sorted(self._peers.values(), key=lambda p: p["index"]), 1):
                         peer_item["index"] = index
             if removed:
@@ -568,6 +572,10 @@ class NetworkServer:
                         self._capture.set_capture_enabled(True)
                         self._capture.set_relative_mode(self._control_owner != "host")
                         self._capture.set_exclusive_capture(self._control_owner != "host" and not self.local_mode)
+                        if owner_disconnected:
+                            # The host's pointer was parked when control left. Put it
+                            # back at the return edge when the active peer disappears.
+                            self._capture.warp_to_edge("right")
                     else:
                         self._capture.set_exclusive_capture(False)
                         self._capture.set_relative_mode(False)
