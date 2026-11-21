@@ -15,6 +15,10 @@ Each input packet includes the source, target, ownership epoch and monotonically
 
 Discovery announcements are not an authorization mechanism. The host must explicitly approve a new device before it receives a persistent session credential.
 
+## Local mode and ownership
+
+Ctrl+Alt+M toggles local mode on the current computer. When a receiver enters local mode, it tells the host, releases any injected held input, and returns ownership to the host if that receiver was active. When local mode is turned off, the host can enter the receiver again by moving to the appropriate screen edge. When the host enters local mode while a receiver is active, it sends a release-inputs control message so modifiers and mouse buttons are not left held remotely.
+
 ## Pairing and secure transport
 
 1. A new device sends a bounded pairing request with a fresh X25519 public key and random salt.
