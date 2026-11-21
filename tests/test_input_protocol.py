@@ -14,7 +14,7 @@ class InputProtocolTests(unittest.TestCase):
         event = {"type": "mouse_move", "dx": 4, "dy": -2}
         encoded = encode_input_event(event)
         self.assertEqual(
-            decode_message(encoded.rstrip(b"\\n")),
+            decode_message(encoded.rstrip(b"\n")),
             {"version": PROTOCOL_VERSION, "kind": "input", "event": event},
         )
 
