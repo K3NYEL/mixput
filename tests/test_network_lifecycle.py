@@ -15,6 +15,7 @@ class FakeInputBackend:
         self.events = []
         self.capture_enabled = False
         self.exclusive = False
+        self.relative = False
 
     def release_all(self):
         self.released += 1
@@ -26,8 +27,8 @@ class FakeInputBackend:
         self.exclusive = bool(enabled)
         return True
 
-    def set_relative_mode(self, _enabled):
-        pass
+    def set_relative_mode(self, enabled):
+        self.relative = bool(enabled)
 
     def warp_to_edge(self, _side):
         pass
@@ -108,6 +109,7 @@ class NetworkLifecycleTests(unittest.TestCase):
         }))
         self.assertTrue(backend.capture_enabled)
         self.assertTrue(backend.exclusive)
+        self.assertTrue(backend.relative)
 
     def test_server_routes_peer_input_to_host(self):
         from app.components.core.input_ownership import InputOwnership
