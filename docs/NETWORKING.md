@@ -2,9 +2,11 @@
 
 ## Session topology
 
-Mixput uses one host/server and up to three receiver devices (four computers total). The host owns the physical keyboard and mouse capture. It is the authority for the active input owner and increments an ownership epoch whenever control moves between adjacent devices.
+Mixput currently uses one session coordinator (the server endpoint) and up to three additional computers (four total). The coordinator maintains the shared screen order and serializes cursor ownership changes. It is not intended to be the only physical input source: every connected computer can capture its own keyboard and mouse while another computer owns the active screen.
 
-Each input packet includes the source, target, ownership epoch and monotonically increasing sequence. A receiver accepts input only when the target, owner and epoch match its current session. A stale or unauthorized packet is rejected.
+Input from a non-active computer is sent to the coordinator, which validates the authenticated sender, current target, ownership epoch and per-sender sequence before routing it to the active screen. The active computer keeps its own local input path. Stale, spoofed, out-of-order or unauthorized packets are rejected.
+
+This is bidirectional input routing over a central session coordinator; it is not yet a fully decentralized peer-to-peer mesh.
 
 ## Discovery and connection
 
@@ -49,8 +51,8 @@ The host limits concurrent unauthenticated handshakes to eight worker slots and 
 The repository's unit tests cover secure bidirectional framing, replay/sequence rejection, oversized frames, bounded-queue overflow and input-protocol validation. They do not prove physical cursor handoff or end-to-end latency.
 
 Before a release, test on real Windows and Linux X11 machines:
-- Keyboard layouts, modifiers, function keys, mouse buttons, movement and wheel.
-- Repeated edge transitions and local-mode shortcut behavior.
+- Keyboard layouts, modifiers, function keys, mouse buttons, movement and wheel from every connected computer.
+- Simultaneous input from more than one computer, repeated edge transitions and local-mode shortcut behavior.
 - Slow Wi-Fi, packet loss, disconnect/reconnect, server shutdown and authorization revocation.
 - Mixed display sizes, scaling and multi-monitor edge behavior.
 
