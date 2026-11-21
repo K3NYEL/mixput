@@ -146,6 +146,13 @@ class InputBackend:
                     on_edge=self._on_x11_edge,
                     on_toggle_local=self.on_toggle_local,
                 )
+                # The coordinator can be the active desktop from the instant
+                # the first peer joins; configure edge monitoring before any
+                # ownership transfer occurs.
+                edge_sides = set() if self._relative_mode else self._edge_sides
+                self._x11_grabber.configure_edges(
+                    edge_sides, self._screen_size, self._edge_margin
+                )
 
             def is_enabled():
                 with self._lock:
