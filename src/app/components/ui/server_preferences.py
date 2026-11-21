@@ -369,7 +369,7 @@ class ServerPreferences(tk.Frame):
 
     def _apply_server_status(self, status):
         self._server_status = status
-        active = status in ("listening", "authenticating", "connected")
+        active = status in ("listening", "pairing", "authenticating", "connected")
         self.on_sharing_changed(active, self._active_port)
         self.start_button.configure(state=tk.DISABLED if active else tk.NORMAL)
         self.stop_button.configure(state=tk.NORMAL if active else tk.DISABLED)
@@ -383,7 +383,7 @@ class ServerPreferences(tk.Frame):
 
     def _apply_client_status(self, status):
         self._client_status = status
-        connected = status in ("connecting", "connected")
+        connected = status in ("connecting", "reconnecting", "connected")
         # Connection is server-only; client sessions are initiated from Devices.
         if hasattr(self, "connect_button"):
             self.connect_button.configure(state=tk.DISABLED if connected else tk.NORMAL)
@@ -395,13 +395,15 @@ class ServerPreferences(tk.Frame):
         server_labels = {
             "stopped": "Stopped",
             "listening": "Sharing",
-            "authenticating": "Approving device",
+            "pairing": "Waiting for device approval",
+            "authenticating": "Authenticating device",
             "connected": "Sharing active",
             "error": "Sharing error",
         }
         client_labels = {
             "disconnected": "Disconnected",
             "connecting": "Requesting access",
+            "reconnecting": "Connection lost · retrying",
             "connected": "Connected",
         }
         server = server_labels.get(self._server_status, self._server_status.title())
