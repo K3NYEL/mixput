@@ -1,6 +1,5 @@
 """Authenticated Mixput client with server-managed horizontal topology and group chat."""
 import base64
-import ipaddress
 import os
 import socket
 import threading
@@ -37,17 +36,10 @@ class NetworkClient:
         self._device_id = self.pairings.device_id
         self._index = 1
         self._devices = []
-        self._virtual_ip = None
-        self._virtual_network = None
         if self.input_backend is not None:
             self.input_backend.on_event = self._send_input
             self.input_backend.on_edge = self._on_local_edge
             self.input_backend.on_toggle_local = self.toggle_local_mode
-
-    @property
-    def virtual_ip(self):
-        with self._lock:
-            return self._virtual_ip
 
     @property
     def local_mode(self):
@@ -175,27 +167,6 @@ class NetworkClient:
             if epoch < self._ownership_epoch:
                 return False
             previous_epoch = self._ownership_epoch
-        network_cidr = message.get("virtual_network")
-        try:
-            virtual_network = ipaddress.ip_network(network_cidr, strict=True)
-        except (TypeError, ValueError) as error:
-            raise ProtocolError("The server provided an invalid Mixput virtual network.") from error
-        if virtual_network.version != 4 or not virtual_network.is_private:
-            raise ProtocolError("The Mixput virtual network must use a private IPv4 range.")
-        virtual_addresses = []
-        for device in devices:
-            if not isinstance(device, dict):
-                raise ProtocolError("Invalid device entry in server topology.")
-            try:
-                virtual_address = ipaddress.ip_address(device.get("virtual_ip", ""))
-            except ValueError as error:
-                raise ProtocolError("The server provided an invalid Mixput virtual IP.") from error
-            if (virtual_address.version != 4 or virtual_address not in virtual_network
-                    or virtual_address in (virtual_network.network_address, virtual_network.broadcast_address)):
-                raise ProtocolError("The server provided an out-of-range Mixput virtual IP.")
-            virtual_addresses.append(str(virtual_address))
-        if len(set(virtual_addresses)) != len(virtual_addresses):
-            raise ProtocolError("The server assigned duplicate Mixput virtual IP addresses.")
         valid_owners = {device.get("id") for device in devices}
         if owner not in valid_owners:
             raise ProtocolError("The server selected an unknown input owner.")
@@ -206,8 +177,6 @@ class NetworkClient:
             old_owner = self._control_owner
             self._devices = devices
             self._index = int(own.get("index", 1))
-            self._virtual_ip = str(own["virtual_ip"])
-            self._virtual_network = str(virtual_network)
             self._control_owner = owner
             self._ownership_epoch = epoch
             if epoch != previous_epoch:
@@ -223,8 +192,6 @@ class NetworkClient:
         self.on_session({
             "devices": devices, "owner": owner, "index": self._index,
             "local_mode": self.local_mode,
-            "virtual_ip": self.virtual_ip,
-            "virtual_network": self._virtual_network,
             "ownership_epoch": self._ownership_epoch,
         })
         return True
@@ -330,8 +297,6 @@ class NetworkClient:
                 self._ownership_epoch = -1
                 self._last_input_sequence = 0
                 self._devices = []
-                self._virtual_ip = None
-                self._virtual_network = None
                 self._local_mode = False
             if self.input_backend:
                 self.input_backend.stop_capture()
