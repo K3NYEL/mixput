@@ -113,19 +113,35 @@ class X11GrabController:
         if name:
             self.on_event({"type": "mouse_button", "button": name, "pressed": bool(pressed)})
 
+    def _check_edge_position(self, position):
+        if not self._edge_sides or not self._screen_size:
+            return False
+        width, height = self._screen_size
+        side = (
+            "right" if "right" in self._edge_sides and position[0] >= width - self._edge_margin
+            else "left" if "left" in self._edge_sides and position[0] <= self._edge_margin - 1
+            else None
+        )
+        if side is None or not 0 <= position[1] < height:
+            self._edge_latched = False
+            return False
+        if self._edge_latched:
+            return False
+        self._edge_latched = True
+        # The callback may change the X11 grab state. Never run it on this
+        # worker, otherwise set_grab() would wait on the thread invoking it.
+        threading.Thread(
+            target=self.on_edge, args=(side,),
+            name="MixputX11EdgeHandoff", daemon=True,
+        ).start()
+        return True
+
     def _dispatch_motion(self, event):
         position = (int(event.root_x), int(event.root_y))
         previous = self._last_position
         self._last_position = position
-        if self._edge_sides and self._screen_size and not self._edge_latched:
-            width, height = self._screen_size
-            side = ("right" if "right" in self._edge_sides and position[0] >= width - self._edge_margin
-                    else "left" if "left" in self._edge_sides and position[0] <= self._edge_margin - 1
-                    else None)
-            if side and 0 <= position[1] < height:
-                self._edge_latched = True
-                self.on_edge(side)
-                return
+        if self._check_edge_position(position):
+            return
         if previous is not None:
             dx, dy = position[0] - previous[0], position[1] - previous[1]
             if dx or dy:
@@ -192,7 +208,15 @@ class X11GrabController:
                             elif event.type == X.ButtonRelease:
                                 self._dispatch_mouse(event, False)
                 else:
-                    self._changed.wait(0.05)
+                    # The active desktop intentionally has no pointer grab.
+                    # Poll its root pointer so edge switching still works when
+                    # pynput/XRecord cannot deliver a global motion callback.
+                    try:
+                        pointer = root.query_pointer()
+                        self._check_edge_position((int(pointer.root_x), int(pointer.root_y)))
+                    except Exception:
+                        pass
+                    self._changed.wait(0.015)
                     self._changed.clear()
         except Exception as error:
             self._desired = False
