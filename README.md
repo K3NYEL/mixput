@@ -24,7 +24,10 @@ All devices must run a compatible Mixput protocol version and remain connected d
 3. On each other computer, find the host under **Devices** or enter its LAN IPv4 address, then choose **Request access**.
 4. Approve each new device on the host when prompted. The server rejects additional devices once four computers are connected.
 5. Use the left and right screen edges to move between neighboring computers.
-6. Open **Chat** in the main navigation to message every device in the session.
+6. Press **Ctrl+Alt+M** on the current computer to toggle local mode. This stops shared input on that desktop; pressing it again returns the device to the shared session.
+7. Open **Chat** in the main navigation to message every device in the session.
+
+If automatic discovery does not find the host, use **Connect manually** on the Devices page and enter the host's LAN IPv4 address and TCP port.
 
 The host sends UDP discovery announcements on port 45821. The authenticated input session uses the configured TCP port (default 8080). Allow both ports through the relevant firewalls on a trusted private network.
 
@@ -50,6 +53,8 @@ The automated suite covers encrypted bidirectional transport, replay/sequence re
 - Multi-monitor behavior and screen scaling.
 
 The edge handoff assumes a single-screen horizontal row. Multi-monitor routing, vertical arrangements, Wayland portals, and seamless handling of differing display scaling are not implemented. Physical cursor handoff and mixed display scaling still require validation on the actual computers.
+
+The application-level virtual-IP experiment was removed: Mixput shares input over its real LAN TCP connection and does not create a VPN or configure operating-system network interfaces.
 
 ## Automatic updates
 
