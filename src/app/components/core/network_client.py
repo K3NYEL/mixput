@@ -1,6 +1,7 @@
 """Authenticated Mixput client with server-managed horizontal topology and group chat."""
 import base64
 import os
+import platform
 import socket
 import threading
 
