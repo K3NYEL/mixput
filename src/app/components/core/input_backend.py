@@ -43,10 +43,36 @@ class InputBackend:
         try:
             import pynput  # noqa: F401
             if system == "Linux":
-                from Xlib import X  # noqa: F401
+                from Xlib import X, display as xdisplay  # noqa: F401
+                if os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland":
+                    return False, (
+                        "Wayland input permission is not available yet. "
+                        "Log out and choose an X11/Xorg session, then start Mixput again."
+                    )
+                if not os.environ.get("DISPLAY"):
+                    return False, (
+                        "Mixput cannot find the Linux desktop display (DISPLAY is empty). "
+                        "Launch it from your logged-in graphical X11 session, not with sudo."
+                    )
+                try:
+                    display = xdisplay.Display()
+                    try:
+                        if not display.has_extension("XTEST"):
+                            return False, (
+                                "The X11 server does not provide XTEST input access. "
+                                "Enable the XTEST extension or use a supported Xorg session."
+                            )
+                    finally:
+                        display.close()
+                except Exception as error:
+                    return False, (
+                        "Mixput cannot access your X11 desktop. Run it as your normal "
+                        "logged-in user so it can use the desktop session's Xauthority. "
+                        f"Details: {error}"
+                    )
         except Exception as error:
             return False, f"Native input capture is unavailable: {error}"
-        return True, "Ready"
+        return True, "Linux desktop input access ready" if system == "Linux" else "Ready"
 
     def configure_edge_switch(self, side, screen_size, on_edge=None, margin=2):
         sides = {side} if isinstance(side, str) else set(side or ())

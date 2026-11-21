@@ -2,24 +2,31 @@
 
 ## Session topology
 
-Mixput currently uses one session coordinator (the server endpoint) and up to three additional computers (four total). The coordinator maintains the shared screen order and serializes cursor ownership changes. It is not intended to be the only physical input source: every connected computer can capture its own keyboard and mouse while another computer owns the active screen.
+Every running Mixput instance starts the same TCP listener and advertises itself on the local network. Devices use their persistent random identity to elect the same session coordinator deterministically: the device with the lexicographically smallest identity among the visible peers coordinates the session. The coordinator is a temporary protocol role, not a user-selected host computer. All other devices automatically connect to it, and any connected computer can own physical input and move the shared pointer between desktops.
 
-Input from a non-active computer is sent to the coordinator, which validates the authenticated sender, current target, ownership epoch and per-sender sequence before routing it to the active screen. The active computer keeps its own local input path. Stale, spoofed, out-of-order or unauthorized packets are rejected.
+The coordinator maintains the shared screen order and serializes cursor ownership changes. Input from a non-active computer is sent to the coordinator, which validates the authenticated sender, current target, ownership epoch and per-sender sequence before routing it to the active screen. The active computer keeps its own local input path. Stale, spoofed, out-of-order or unauthorized packets are rejected.
 
-This is bidirectional input routing over a central session coordinator; it is not yet a fully decentralized peer-to-peer mesh.
+This is automatic coordinator election with bidirectional input routing. It is not a fully decentralized peer-to-peer mesh: the elected coordinator remains responsible for session ordering and routing. If it disappears, discovery expires it and the remaining devices elect a replacement; the replacement may request pairing approval again.
 
 ## Discovery and connection
 
-- UDP **45821**: local IPv4 broadcast announcements. These contain device discovery metadata only; they do not carry pairing credentials or input.
-- TCP **8080** by default: pairing, authenticated session setup, input events, topology updates and group chat. The host port can be changed in the server settings.
-- Discovery is best-effort. A receiver can still connect by entering the host's LAN IPv4 address manually.
+- UDP **45821**: local IPv4 broadcast announcements. These contain discovery metadata only; they do not carry pairing credentials or input.
+- TCP **8080**: every device listens on this port by default. Pairing, authenticated session setup, input events, topology updates and group chat use the elected coordinator's listener.
+- Both devices must be running Mixput on the same reachable LAN. The app starts discovery and listening automatically; users do not choose a host, enter an IP address or manually connect as a client.
+- Discovery is best-effort and depends on the LAN allowing broadcast traffic. Wi-Fi client isolation, guest networks and firewall rules can prevent peers from seeing each other.
 - Keep both ports available only on a trusted private LAN. Do not expose the TCP service to the public internet.
 
-Discovery announcements are not an authorization mechanism. The host must explicitly approve a new device before it receives a persistent session credential.
+Discovery announcements are not an authorization mechanism. A newly elected coordinator must explicitly approve an unknown device before it receives a persistent session credential.
 
 ## Local mode and ownership
 
 Ctrl+Alt+M toggles local mode on the current computer. When a receiver enters local mode, it tells the host, releases any injected held input, and returns ownership to the host if that receiver was active. When local mode is turned off, the host can enter the receiver again by moving to the appropriate screen edge. When the host enters local mode while a receiver is active, it sends a release-inputs control message so modifiers and mouse buttons are not left held remotely.
+
+## Linux desktop permissions
+
+Linux input sharing currently requires an X11/Xorg desktop session. Mixput must run as the logged-in desktop user so it can use that session's `DISPLAY` and `XAUTHORITY` credentials. The X server must expose the XTEST extension for pointer and keyboard injection.
+
+Mixput checks the X11 connection and XTEST availability before starting input sharing and reports actionable errors in the UI. Do not run Mixput with `sudo`, do not loosen permissions on `/dev/input`, and do not add broad device permissions: this backend uses the user's X11 session rather than reading raw input devices. Wayland is not supported by this backend yet; choose an Xorg session at login.
 
 ## Pairing and secure transport
 
