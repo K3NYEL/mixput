@@ -74,6 +74,27 @@ class SecureChannelTests(unittest.TestCase):
         with self.assertRaises(ProtocolError):
             self.left.send({"kind": "large", "value": "x" * 5000})
 
+    def test_rejects_boolean_sequence_even_when_equal_to_integer(self):
+        raw_peer, raw_channel = socket.socketpair()
+        receiver = SecureChannel(raw_channel, self.token)
+        cipher = Fernet(self.token.encode("ascii"))
+        try:
+            first = json.dumps(
+                {"sequence": 0, "message": {"kind": "first"}},
+                separators=(",", ":"),
+            ).encode("utf-8")
+            boolean_sequence = json.dumps(
+                {"sequence": True, "message": {"kind": "second"}},
+                separators=(",", ":"),
+            ).encode("utf-8")
+            raw_peer.sendall(cipher.encrypt(first) + b"\\n" + cipher.encrypt(boolean_sequence) + b"\\n")
+            self.assertEqual(receiver.receive(), {"kind": "first"})
+            with self.assertRaises(ProtocolError):
+                receiver.receive()
+        finally:
+            receiver.close()
+            raw_peer.close()
+
     def test_writer_thread_stops_when_channel_closes(self):
         self.left.close()
         self.assertFalse(self.left._writer.is_alive())
