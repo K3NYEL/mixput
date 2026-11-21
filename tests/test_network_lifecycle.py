@@ -200,6 +200,19 @@ class NetworkLifecycleTests(unittest.TestCase):
         self.assertEqual(target_channel.messages[-1]["source_id"], "peer-a")
         self.assertEqual(target_channel.messages[-1]["target_id"], "peer-b")
 
+    def test_linux_edge_callback_does_not_require_exclusive_capture(self):
+        from app.components.core.input_backend import InputBackend
+
+        backend = InputBackend()
+        detected = []
+        backend.on_edge = detected.append
+        backend._capture_enabled = True
+        backend._exclusive_enabled = False
+        backend._relative_mode = False
+
+        backend._on_x11_edge("right")
+        self.assertEqual(detected, ["right"])
+
     def test_edge_detection_rearms_after_leaving_an_unavailable_edge(self):
         from app.components.core.input_backend import InputBackend
 
