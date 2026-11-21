@@ -241,8 +241,9 @@ class NetworkClient:
             if capture_remote and not exclusive_ready:
                 _LOG.error(
                     "Remote desktop became active but local input capture failed "
-                    "(platform=%s, device_id=%s, owner=%s)",
+                    "(platform=%s, device_id=%s, owner=%s, reason=%s)",
                     platform.system(), self._device_id, owner,
+                    getattr(self.input_backend, "exclusive_capture_error", "No backend detail available"),
                 )
                 self.on_message(
                     "[Mixput] Could not activate exclusive keyboard/mouse capture. "

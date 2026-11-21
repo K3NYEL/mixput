@@ -31,6 +31,7 @@ class X11GrabController:
         self._applied = threading.Event()
         self._active = False
         self._error = None
+        self._grab_error = None
         self._edge_sides = set()
         self._screen_size = None
         self._edge_margin = 2
@@ -58,6 +59,10 @@ class X11GrabController:
         if not self._applied.wait(1.0):
             return False
         return self._active if self._desired else not self._active
+
+    @property
+    def grab_error(self):
+        return self._grab_error or self._error or "X11 grab failed without a reported status."
 
     def close(self):
         self._stopping.set()
@@ -165,17 +170,38 @@ class X11GrabController:
                         confine_to=root, cursor=X.NONE, time=X.CurrentTime,
                     )
                     grabbed_pointer = pointer.status == X.GrabSuccess
-                    keyboard = root.grab_keyboard(
-                        owner_events=False, pointer_mode=X.GrabModeAsync,
-                        keyboard_mode=X.GrabModeAsync, time=X.CurrentTime,
-                    )
-                    grabbed_keyboard = keyboard.status == X.GrabSuccess
+                    keyboard = None
+                    if grabbed_pointer:
+                        keyboard = root.grab_keyboard(
+                            owner_events=False, pointer_mode=X.GrabModeAsync,
+                            keyboard_mode=X.GrabModeAsync, time=X.CurrentTime,
+                        )
+                        grabbed_keyboard = keyboard.status == X.GrabSuccess
+                    else:
+                        grabbed_keyboard = False
                     if not (grabbed_pointer and grabbed_keyboard):
                         if grabbed_pointer:
                             root.ungrab_pointer(X.CurrentTime)
                         if grabbed_keyboard:
                             root.ungrab_keyboard(X.CurrentTime)
+                        pointer_status = int(pointer.status)
+                        keyboard_status = int(keyboard.status) if keyboard is not None else None
+                        status_names = {
+                            X.GrabSuccess: "GrabSuccess",
+                            X.AlreadyGrabbed: "AlreadyGrabbed",
+                            X.InvalidTime: "InvalidTime",
+                            X.NotViewable: "NotViewable",
+                            X.Frozen: "Frozen",
+                        }
+                        self._grab_error = (
+                            "X11 exclusive capture failed: "
+                            f"pointer={status_names.get(pointer_status, pointer_status)}, "
+                            f"keyboard={status_names.get(keyboard_status, keyboard_status)}. "
+                            "Another application may own an X11 grab, or the desktop rejected it."
+                        )
                         grabbed_pointer = grabbed_keyboard = False
+                    else:
+                        self._grab_error = None
                     display.sync()
                     self._active = grabbed_pointer and grabbed_keyboard
                     self._last_position = None
@@ -221,6 +247,7 @@ class X11GrabController:
         except Exception as error:
             self._desired = False
             self._error = str(error)
+            self._grab_error = f"X11 capture thread error: {error}"
             self._ready.set()
             self._applied.set()
         finally:
