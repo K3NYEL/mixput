@@ -87,7 +87,7 @@ class SecureChannelTests(unittest.TestCase):
                 {"sequence": True, "message": {"kind": "second"}},
                 separators=(",", ":"),
             ).encode("utf-8")
-            raw_peer.sendall(cipher.encrypt(first) + b"\\n" + cipher.encrypt(boolean_sequence) + b"\\n")
+            raw_peer.sendall(cipher.encrypt(first) + b"\n" + cipher.encrypt(boolean_sequence) + b"\n")
             self.assertEqual(receiver.receive(), {"kind": "first"})
             with self.assertRaises(ProtocolError):
                 receiver.receive()
