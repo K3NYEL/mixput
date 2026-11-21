@@ -3,6 +3,10 @@ import base64
 import os
 import socket
 import threading
+
+from app.components.core.diagnostics import get_logger
+
+_LOG = get_logger("network_client")
 from app.components.core.input_protocol import PROTOCOL_VERSION, EVENT_TYPES, ProtocolError
 from app.components.core.pairing_handshake import (
     PAIRING_VERSION, send_control, receive_control, new_ephemeral_key,
@@ -234,10 +238,14 @@ class NetworkClient:
             self.input_backend.set_capture_enabled(capture_enabled)
             exclusive_ready = self.input_backend.set_exclusive_capture(capture_remote)
             if capture_remote and not exclusive_ready:
+                _LOG.error(
+                    "Remote desktop became active but local input capture failed "
+                    "(platform=%s, device_id=%s, owner=%s)",
+                    platform.system(), self._device_id, owner,
+                )
                 self.on_message(
-                    "[Mixput] Linux could not obtain exclusive keyboard/mouse capture. "
-                    "Use the logged-in X11/Xorg session, keep Mixput running as your "
-                    "desktop user, and close other software that may already grab input."
+                    "[Mixput] Could not activate exclusive keyboard/mouse capture. "
+                    "Check the Mixput diagnostics log for details."
                 )
             # A non-owner must use relative pointer motion. On Windows, pynput
             # recenters the physical cursor while forwarding deltas; on X11 the
