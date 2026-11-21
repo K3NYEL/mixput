@@ -224,7 +224,12 @@ class NetworkClient:
             capture_remote = capture_enabled and not active
             self.input_backend.set_capture_enabled(capture_enabled)
             self.input_backend.set_exclusive_capture(capture_remote)
-            self.input_backend.set_relative_mode(False)
+            # A non-owner must use relative pointer motion. On Windows, pynput
+            # recenters the physical cursor while forwarding deltas; on X11 the
+            # native grab keeps the pointer confined and forwards raw deltas.
+            # Leaving this disabled lets the local cursor drift and eventually
+            # hit screen bounds while another computer owns the shared pointer.
+            self.input_backend.set_relative_mode(capture_remote)
             if active and old_owner != self._device_id:
                 self.input_backend.warp_to_edge(message.get("enter_edge") or "left")
         self.on_session({
