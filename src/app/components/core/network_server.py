@@ -524,9 +524,12 @@ class NetworkServer:
                     requested_epoch = message.get("ownership_epoch")
                     with self._lock:
                         devices_now = self._device_snapshot_locked()
-                        current_index = next((d["index"] for d in devices_now if d["id"] == client_id), -1)
-                        target_index = current_index + (1 if side == "right" else -1 if side == "left" else 0)
-                        target = next((d for d in devices_now if d["index"] == target_index), None)
+                        if len(devices_now) == 2:
+                            target = next((device for device in devices_now if device["id"] != client_id), None)
+                        else:
+                            current_index = next((d["index"] for d in devices_now if d["id"] == client_id), -1)
+                            target_index = current_index + (1 if side == "right" else -1 if side == "left" else 0)
+                            target = next((d for d in devices_now if d["index"] == target_index), None)
                         allowed = (
                             self._control_owner == client_id
                             and not peer.get("local_mode", False)
