@@ -1,5 +1,6 @@
 """Authenticated multi-device Mixput hub (maximum four devices including host)."""
 import base64
+import platform
 import socket
 import threading
 
