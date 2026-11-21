@@ -129,6 +129,20 @@ class InputBackend:
         self._edge_latched = True
         return side
 
+    def _windows_event_filter(self, listener, data, injected_mask):
+        """Suppress physical source input, but always allow Mixput's own injected events."""
+        flags = int(getattr(data, "flags", 0) or 0)
+        if flags & injected_mask:
+            return True
+        with self._lock:
+            should_suppress = self._capture_enabled and self._exclusive_enabled
+        if should_suppress:
+            try:
+                listener.suppress_event()
+            except Exception:
+                _LOG.exception("Windows hook could not suppress an input event")
+        return True
+
     def _load(self):
         available, reason = self.availability()
         if not available:
@@ -238,21 +252,8 @@ class InputBackend:
                     self.on_event({"type": "mouse_scroll", "dx": int(dx), "dy": int(dy)})
 
             def windows_filter(listener, data, injected_mask):
-                # Do not swallow input synthesized by pynput itself. In
-                # relative mode Windows must accept the injected recenter
-                # movement; suppressing it leaves the physical cursor pinned
-                # at the edge and makes both desktops appear frozen.
-                flags = int(getattr(data, "flags", 0) or 0)
-                if flags & injected_mask:
-                    return True
-                with self._lock:
-                    should_suppress = self._capture_enabled and self._exclusive_enabled
-                if should_suppress:
-                    try:
-                        listener.suppress_event()
-                    except Exception:
-                        _LOG.exception("Windows hook could not suppress an input event")
-                return True
+                # Relative mode uses injected movement to recenter the cursor.
+                return self._windows_event_filter(listener, data, injected_mask)
 
             keyboard_options = {}
             mouse_options = {}
