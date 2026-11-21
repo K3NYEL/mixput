@@ -41,7 +41,7 @@ def _broadcast_addresses():
                 network = ipaddress.IPv4Network(f"{address}/{mask}", strict=False)
                 if network.prefixlen < 31:
                     targets.add(str(network.broadcast_address))
-            except ipaddress.AddressValueError, ipaddress.NetmaskValueError:
+            except (ipaddress.AddressValueError, ipaddress.NetmaskValueError):
                 continue
     return targets
 
@@ -155,7 +155,7 @@ class DeviceDiscovery:
     def _accept_packet(self, payload, source_ip):
         try:
             message = json.loads(payload.decode("utf-8"))
-        except UnicodeDecodeError, json.JSONDecodeError:
+        except (UnicodeDecodeError, json.JSONDecodeError):
             return
         if not isinstance(message, dict):
             return

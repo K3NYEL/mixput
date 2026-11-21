@@ -28,6 +28,7 @@ class NetworkClient:
         self.sock = None
         self._channel = None
         self._thread = None
+        self._stop_event = threading.Event()
         self._lock = threading.RLock()
         self._control_owner = "host"
         self._ownership_epoch = -1
@@ -78,6 +79,7 @@ class NetworkClient:
             self.on_message("[Mixput] Select or enter the host laptop address.")
             return False
         self.running = True
+        self._stop_event.clear()
         self.on_status("connecting")
         self._thread = threading.Thread(target=self._run, args=(host, port), daemon=True, name="MixputClient")
         self._thread.start()
@@ -228,13 +230,31 @@ class NetworkClient:
         return bool(self.input_backend.apply_event(event))
 
     def _run(self, host, port):
+        """Reconnect using saved pairing credentials with bounded exponential backoff."""
+        delay = 1.0
+        while self.running and not self._stop_event.is_set():
+            self._run_session(host, port)
+            if not self.running or self._stop_event.is_set():
+                break
+            self.on_status("reconnecting")
+            self.on_message(f"[Mixput] Connection lost. Retrying in {delay:.0f}s...")
+            self._stop_event.wait(delay)
+            delay = min(delay * 2.0, 20.0)
+        self.on_status("disconnected")
+
+    def _run_session(self, host, port):
         channel = None
         try:
             self._port = int(port)
             self.on_message(f"[Mixput] Connecting to {host}:{port}...")
             connection = socket.create_connection((host, port), timeout=6)
-            connection.settimeout(8.0)
+            connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            connection.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+            connection.settimeout(65.0)
             self.sock = connection
+            if not self.running or self._stop_event.is_set():
+                connection.close()
+                return
             saved = self.pairings.get_host(host, port)
             if saved:
                 send_control(connection, {"type": "resume", "version": PAIRING_VERSION,
@@ -253,7 +273,7 @@ class NetworkClient:
             hello = channel.receive()
             if not hello or hello.get("version") != PROTOCOL_VERSION or hello.get("kind") != "hello_ack":
                 raise ProtocolError("The host rejected the secure session.")
-            connection.settimeout(0.5)
+            connection.settimeout(None)
             if self.input_backend:
                 self.input_backend.start_capture()
                 self.input_backend.set_capture_enabled(False)
@@ -285,7 +305,6 @@ class NetworkClient:
             if self.running:
                 self.on_message(f"[Mixput] Connection failed: {error}")
         finally:
-            self.running = False
             with self._lock:
                 self._control_owner = "host"
                 self._ownership_epoch = -1
@@ -307,10 +326,10 @@ class NetworkClient:
             self.sock = None
             self._channel = None
             self.on_session({"devices": [], "owner": "host", "index": 1})
-            self.on_status("disconnected")
 
     def disconnect(self):
         self.running = False
+        self._stop_event.set()
         channel = self._channel
         if channel:
             try:
