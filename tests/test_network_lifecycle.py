@@ -213,6 +213,45 @@ class NetworkLifecycleTests(unittest.TestCase):
         backend._on_x11_edge("right")
         self.assertEqual(detected, ["right"])
 
+    def test_windows_filter_allows_injected_cursor_recenter_events(self):
+        from types import SimpleNamespace
+        from app.components.core.input_backend import InputBackend
+
+        class Listener:
+            def __init__(self):
+                self.suppressed = 0
+
+            def suppress_event(self):
+                self.suppressed += 1
+
+        backend = InputBackend()
+        backend._capture_enabled = True
+        backend._exclusive_enabled = True
+        listener = Listener()
+
+        # LLMHF_INJECTED is bit 0x01. Our cursor warp must reach Windows.
+        self.assertTrue(backend._windows_event_filter(listener, SimpleNamespace(flags=0x01), 0x03))
+        self.assertEqual(listener.suppressed, 0)
+
+        # A real physical movement is still captured while another desktop owns input.
+        self.assertTrue(backend._windows_event_filter(listener, SimpleNamespace(flags=0), 0x03))
+        self.assertEqual(listener.suppressed, 1)
+
+    def test_windows_filter_does_not_suppress_when_capture_is_inactive(self):
+        from types import SimpleNamespace
+        from app.components.core.input_backend import InputBackend
+
+        class Listener:
+            suppressed = 0
+
+            def suppress_event(self):
+                self.suppressed += 1
+
+        backend = InputBackend()
+        listener = Listener()
+        self.assertTrue(backend._windows_event_filter(listener, SimpleNamespace(flags=0), 0x03))
+        self.assertEqual(listener.suppressed, 0)
+
     def test_edge_detection_rearms_after_leaving_an_unavailable_edge(self):
         from app.components.core.input_backend import InputBackend
 
