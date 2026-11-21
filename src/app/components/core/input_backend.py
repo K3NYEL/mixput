@@ -304,11 +304,18 @@ class InputBackend:
                 if self._x11_grabber:
                     self._x11_grabber.set_grab(False)
 
+    @property
+    def exclusive_capture_error(self):
+        if self._x11_grabber and not self._exclusive_enabled:
+            return self._x11_grabber.grab_error
+        return "Native input backend did not confirm exclusive capture."
+
     def set_exclusive_capture(self, enabled):
         with self._lock:
             requested = bool(enabled and self._capture_enabled)
             if self._x11_grabber and not self._x11_grabber.set_grab(requested):
                 self._exclusive_enabled = False
+                _LOG.error("Could not acquire X11 exclusive input capture: %s", self._x11_grabber.grab_error)
                 return False
             self._exclusive_enabled = requested
             if self._x11_grabber:
