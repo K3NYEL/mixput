@@ -240,6 +240,51 @@ class NetworkServer:
             self.on_log(f"[Mixput] Could not transmit input: {error}")
             return False
 
+    def _route_peer_input(self, source_peer, message):
+        """Validate a peer's input and route it to the active screen."""
+        event = message.get("event")
+        epoch = message.get("ownership_epoch")
+        sequence = message.get("sequence")
+        if not isinstance(event, dict) or event.get("type") not in EVENT_TYPES:
+            return False
+        if not isinstance(epoch, int) or isinstance(epoch, bool):
+            return False
+        if not isinstance(sequence, int) or isinstance(sequence, bool) or sequence < 1:
+            return False
+        with self._lock:
+            source_id = source_peer["id"]
+            current = self._peers.get(source_id)
+            target_id = self._control_owner
+            if (
+                current is not source_peer
+                or source_peer.get("local_mode", False)
+                or source_id == target_id
+                or epoch != self._ownership_epoch
+                or message.get("target_id") != target_id
+                or sequence <= source_peer.get("input_sequence", 0)
+            ):
+                return False
+            source_peer["input_sequence"] = sequence
+            target_peer = self._peers.get(target_id)
+            if target_id != "host" and (target_peer is None or target_peer.get("local_mode", False)):
+                return False
+        routed = {
+            "version": PROTOCOL_VERSION,
+            "kind": "input",
+            "source_id": source_id,
+            "target_id": target_id,
+            "ownership_epoch": epoch,
+            "sequence": sequence,
+            "event": event,
+        }
+        if target_id == "host":
+            backend = self._capture
+            return bool(backend and backend.apply_event(event))
+        try:
+            return bool(target_peer["channel"].send(routed))
+        except (OSError, ProtocolError, ValueError):
+            return False
+
     def send_chat(self, text):
         if not isinstance(text, str):
             return False
@@ -415,7 +460,7 @@ class NetworkServer:
                 index = len(self._peers) + 1
                 peer = {"id": client_id, "name": (name.strip() if 'name' in locals() else self.pairings.get_authorized_client(client_id)["name"]),
                         "channel": channel, "socket": connection, "index": index,
-                        "address": address[0], "local_mode": False}
+                        "address": address[0], "local_mode": False, "input_sequence": 0}
                 self._peers[client_id] = peer
                 owner = self._control_owner
                 devices = self._device_snapshot_locked()
@@ -441,7 +486,8 @@ class NetworkServer:
                 if kind == "disconnect":
                     break
                 if kind == "input":
-                    self.on_log("[Mixput] Ignored input from a receiver device.")
+                    if not self._route_peer_input(peer, message):
+                        self.on_log(f"[Mixput] Rejected input from {peer['name']}: stale, unauthorized, or invalid event.")
                 elif kind == "local_mode":
                     enabled = message.get("enabled")
                     if not isinstance(enabled, bool):

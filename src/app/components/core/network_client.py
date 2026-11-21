@@ -32,7 +32,8 @@ class NetworkClient:
         self._lock = threading.RLock()
         self._control_owner = "host"
         self._ownership_epoch = -1
-        self._last_input_sequence = 0
+        self._last_input_sequences = {}
+        self._input_sequence = 0
         self._local_mode = False
         self._device_id = self.pairings.device_id
         self._index = 1
@@ -58,6 +59,11 @@ class NetworkClient:
             self._local_mode = enabled
         if self.input_backend:
             self.input_backend.release_all()
+            with self._lock:
+                capture_enabled = not enabled and self._ownership_epoch >= 0
+                exclusive_capture = capture_enabled and self._control_owner != self._device_id
+            self.input_backend.set_capture_enabled(capture_enabled)
+            self.input_backend.set_exclusive_capture(exclusive_capture)
         with self._lock:
             channel = self._channel
             epoch = self._ownership_epoch
@@ -101,8 +107,31 @@ class NetworkClient:
         return True
 
     def _send_input(self, event):
-        # Clients are receivers only; the host is the sole physical input source.
-        return
+        """Forward this computer's physical input to the currently active screen."""
+        if not isinstance(event, dict) or event.get("type") not in EVENT_TYPES:
+            return False
+        with self._lock:
+            if self._local_mode or self._control_owner == self._device_id:
+                return False
+            channel = self._channel
+            target_id = self._control_owner
+            epoch = self._ownership_epoch
+            if channel is None or epoch < 0:
+                return False
+            self._input_sequence += 1
+            sequence = self._input_sequence
+        try:
+            return bool(channel.send({
+                "version": PROTOCOL_VERSION,
+                "kind": "input",
+                "target_id": target_id,
+                "ownership_epoch": epoch,
+                "sequence": sequence,
+                "event": event,
+            }))
+        except (OSError, ProtocolError, ValueError) as error:
+            self.on_message(f"[Mixput] Could not transmit local input: {error}")
+            return False
 
     def _on_local_edge(self, side):
         with self._lock:
@@ -183,12 +212,18 @@ class NetworkClient:
             self._control_owner = owner
             self._ownership_epoch = epoch
             if epoch != previous_epoch:
-                self._last_input_sequence = 0
+                self._last_input_sequences.clear()
             active = owner == self._device_id
         if self.input_backend:
             if old_owner == self._device_id and not active:
                 self.input_backend.release_all()
-            self.input_backend.set_capture_enabled(False)
+            # When this computer is not the active screen, capture its local
+            # peripherals and forward them to the active screen. The active
+            # computer keeps native local input and does not suppress its devices.
+            capture_enabled = not self.local_mode
+            capture_remote = capture_enabled and not active
+            self.input_backend.set_capture_enabled(capture_enabled)
+            self.input_backend.set_exclusive_capture(capture_remote)
             self.input_backend.set_relative_mode(False)
             if active and old_owner != self._device_id:
                 self.input_backend.warp_to_edge(message.get("enter_edge") or "left")
@@ -205,15 +240,16 @@ class NetworkClient:
                 not self._local_mode
                 and self._control_owner == self._device_id
                 and message.get("target_id") == self._device_id
-                and message.get("source_id") == "host"
+                and message.get("source_id") in {d.get("id") for d in self._devices}
+                and message.get("source_id") != self._device_id
                 and message.get("ownership_epoch") == self._ownership_epoch
                 and isinstance(message.get("sequence"), int)
                 and not isinstance(message.get("sequence"), bool)
-                and message["sequence"] > self._last_input_sequence
+                and message["sequence"] > self._last_input_sequences.get(message.get("source_id"), 0)
             )
             if not valid:
                 return False
-            self._last_input_sequence = message["sequence"]
+            self._last_input_sequences[message["source_id"]] = message["sequence"]
         event = message.get("event")
         if not isinstance(event, dict) or event.get("type") not in EVENT_TYPES or not self.input_backend:
             return False
@@ -307,7 +343,7 @@ class NetworkClient:
             with self._lock:
                 self._control_owner = "host"
                 self._ownership_epoch = -1
-                self._last_input_sequence = 0
+                self._last_input_sequences.clear()
                 self._devices = []
                 self._local_mode = False
             if self.input_backend:

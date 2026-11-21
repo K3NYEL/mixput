@@ -11,8 +11,8 @@ The host occupies position 1 (leftmost). Remote devices are placed in connection
 - The host's right edge enters the first remote device.
 - A remote device's left edge moves to its previous neighbor; its right edge moves to its next neighbor.
 - The first and last devices have only one neighboring device.
-- The host is the only physical keyboard and mouse source. Its events are routed to the active desktop; each receiver applies them locally to its own desktop.
-- Keyboard, mouse movement, buttons, and wheel events follow the active desktop.
+- Every connected computer can provide keyboard and mouse input. When its own desktop is not active, its local events are securely routed to the active desktop.
+- The computer currently under control keeps its normal local input path. Keyboard, mouse movement, buttons, and wheel events follow the active desktop.
 - Mixput releases held keys and mouse buttons during a handoff or disconnect to reduce stuck-input issues.
 
 All devices must run a compatible Mixput protocol version and remain connected during a handoff. The server enforces the four-device limit, counting the host.
@@ -35,7 +35,7 @@ The host sends UDP discovery announcements on port 45821. The authenticated inpu
 
 New devices must be explicitly approved on the host. Pairing uses ephemeral X25519 key agreement and HKDF to derive a wrapping key; the generated Fernet session key is transferred inside an AES-GCM authenticated-encryption message. Input sessions use authenticated encrypted transport. Approved device credentials are stored in the user's Mixput configuration directory with restrictive file permissions on Linux. The host can revoke saved device authorization.
 
-Only the host captures physical keyboard and mouse input. The server routes those events to the active desktop, and each authenticated receiver applies them locally. Receiver devices do not send their own physical input back to the host. Group chat messages are relayed only among authenticated session members over their encrypted channels. Do not expose Mixput's TCP port to the public internet. Use it only on a trusted local network and approve devices you recognize.
+Every connected computer can capture and provide its own physical keyboard and mouse input when another desktop is active. The host/server currently remains the session coordinator: it validates ownership and routes authenticated input to the active desktop. This is bidirectional input routing, not a fully decentralized peer-to-peer mesh. Group chat messages are relayed only among authenticated session members over their encrypted channels. Do not expose Mixput's TCP port to the public internet. Use it only on a trusted local network and approve devices you recognize.
 
 See [docs/NETWORKING.md](docs/NETWORKING.md) for the transport architecture, pairing flow, queue/backpressure policy, reconnection behavior, and network limits.
 
