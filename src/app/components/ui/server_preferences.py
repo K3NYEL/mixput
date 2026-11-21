@@ -284,6 +284,12 @@ class ServerPreferences(tk.Frame):
         return values
 
     def start_server(self):
+        if self.client.running or (self.client._thread and self.client._thread.is_alive()):
+            messagebox.showinfo(
+                "Mixput", "Disconnect from the current host before starting a server on this computer.",
+                parent=self,
+            )
+            return
         available, reason = InputBackend.availability()
         if not available:
             messagebox.showerror("Input support unavailable", reason, parent=self)
@@ -304,6 +310,11 @@ class ServerPreferences(tk.Frame):
             self.start_button.configure(state=tk.DISABLED)
             self.stop_button.configure(state=tk.NORMAL)
             self._queue_log(f"[Mixput] Sharing is available at {local_ip}:{port}.")
+        else:
+            messagebox.showinfo(
+                "Mixput server", "The previous server session is still shutting down. Try again in a moment.",
+                parent=self,
+            )
 
     def stop_server(self):
         self.server.stop()
@@ -312,7 +323,13 @@ class ServerPreferences(tk.Frame):
         self.stop_button.configure(state=tk.DISABLED)
 
     def connect_discovered_device(self, address, port):
-        """Connect to a discovered host without adding client controls to Connection."""
+        """Connect to a discovered host without turning this computer into a second server."""
+        if self.server.running or (self.server._thread and self.server._thread.is_alive()):
+            messagebox.showinfo(
+                "Mixput", "Stop this computer's server before joining another host.",
+                parent=self,
+            )
+            return False
         available, reason = InputBackend.availability()
         if not available:
             messagebox.showerror("Input support unavailable", reason, parent=self)
@@ -328,7 +345,13 @@ class ServerPreferences(tk.Frame):
         except (TypeError, ValueError) as error:
             messagebox.showerror("Connection settings", str(error), parent=self)
             return False
-        return self.client.connect(host, port)
+        connected = self.client.connect(host, port)
+        if not connected:
+            messagebox.showinfo(
+                "Mixput", "A client connection is already starting or shutting down.",
+                parent=self,
+            )
+        return connected
 
     def disconnect_client(self):
         self.client.disconnect()
@@ -361,6 +384,7 @@ class ServerPreferences(tk.Frame):
         self.on_sharing_changed(active, self._active_port)
         self.start_button.configure(state=tk.DISABLED if active else tk.NORMAL)
         self.stop_button.configure(state=tk.NORMAL if active else tk.DISABLED)
+        self.server_port.configure(state=tk.DISABLED if active else tk.NORMAL)
         self._refresh_status()
 
     def _queue_client_status(self, status):
@@ -395,7 +419,11 @@ class ServerPreferences(tk.Frame):
             "connected": "Connected",
         }
         server = server_labels.get(self._server_status, self._server_status.title())
-        self.status_label.configure(text=f"Mixput server: {server}")
+        if self._server_status == "stopped" and self._client_status != "disconnected":
+            client = client_labels.get(self._client_status, self._client_status.title())
+            self.status_label.configure(text=f"Mixput client: {client}")
+        else:
+            self.status_label.configure(text=f"Mixput server: {server}")
         devices = self.server.connected_devices if self.server.running else (
             self.client._devices if self._client_status == "connected" else [])
         owner = self.server._control_owner if self.server.running else self.client._control_owner
