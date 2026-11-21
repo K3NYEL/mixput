@@ -223,7 +223,13 @@ class NetworkClient:
             capture_enabled = not self.local_mode
             capture_remote = capture_enabled and not active
             self.input_backend.set_capture_enabled(capture_enabled)
-            self.input_backend.set_exclusive_capture(capture_remote)
+            exclusive_ready = self.input_backend.set_exclusive_capture(capture_remote)
+            if capture_remote and not exclusive_ready:
+                self.on_message(
+                    "[Mixput] Linux could not obtain exclusive keyboard/mouse capture. "
+                    "Use the logged-in X11/Xorg session, keep Mixput running as your "
+                    "desktop user, and close other software that may already grab input."
+                )
             # A non-owner must use relative pointer motion. On Windows, pynput
             # recenters the physical cursor while forwarding deltas; on X11 the
             # native grab keeps the pointer confined and forwards raw deltas.
