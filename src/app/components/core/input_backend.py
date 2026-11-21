@@ -71,7 +71,8 @@ class InputBackend:
 
     def _on_x11_edge(self, side):
         with self._lock:
-            if not self._capture_enabled or not self._exclusive_enabled or self._edge_latched:
+            if (not self._capture_enabled or not self._exclusive_enabled
+                    or self._relative_mode or self._edge_latched):
                 return
             self._edge_latched = True
         self.on_edge(side)
