@@ -34,13 +34,15 @@ New devices must be explicitly approved on the host. Pairing uses ephemeral X255
 
 Only the host captures physical keyboard and mouse input. The server routes those events to the active desktop, and each authenticated receiver applies them locally. Receiver devices do not send their own physical input back to the host. Group chat messages are relayed only among authenticated session members over their encrypted channels. Do not expose Mixput's TCP port to the public internet. Use it only on a trusted local network and approve devices you recognize.
 
+See [docs/NETWORKING.md](docs/NETWORKING.md) for the transport architecture, pairing flow, queue/backpressure policy, reconnection behavior, and network limits.
+
 ## Platform notes
 
 The input backend uses pynput. Windows and Linux X11 are supported targets. Wayland-only sessions are reported as unavailable because global input capture/injection requires a desktop-portal implementation. On Linux, use an X11 desktop session and grant the application the required input permissions.
 
 ## Validation and limitations
 
-Automated tests cover encrypted transport, input protocol validation, pairing, loopback networking, multi-device capacity, horizontal handoff, and group chat. A loopback test cannot verify physical cursor movement across multiple desktops. Before treating this as release-ready, verify on real devices:
+The automated suite covers encrypted bidirectional transport, replay/sequence rejection, oversized frames, bounded-queue overflow, and input-protocol validation. These tests do not verify physical cursor movement or full multi-device behavior. Before treating this as release-ready, verify on real devices:
 
 - Windows to Windows, Linux X11 to Linux X11, and mixed Windows/Linux sessions.
 - Keyboard layouts, modifiers, function keys, mouse buttons, movement, and scroll.
