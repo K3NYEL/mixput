@@ -204,15 +204,25 @@ class NetworkServer:
             return peer["name"] if peer else "Disconnected device"
 
     def _on_local_edge(self, side):
-        if side != "right":
-            return
+        if side not in ("left", "right"):
+            return False
         with self._lock:
             if self._local_mode or self._control_owner != "host":
-                return
-            next_peer = next((p for p in sorted(self._peers.values(), key=lambda x: x["index"])
-                              if p["index"] == 1), None)
-        if next_peer:
-            self._set_owner(next_peer["id"], "left")
+                return False
+            peers = sorted(self._peers.values(), key=lambda item: item["index"])
+            if len(peers) == 1:
+                # With two computers, either physical edge reaches the other
+                # desktop. This avoids depending on which random device ID won
+                # coordinator election.
+                next_peer = peers[0]
+            else:
+                next_peer = next(
+                    (peer for peer in peers if peer["index"] == (1 if side == "right" else -1)),
+                    None,
+                )
+        if not next_peer:
+            return False
+        return self._set_owner(next_peer["id"], "left" if side == "right" else "right")
 
     def _send_input(self, event):
         if not isinstance(event, dict) or event.get("type") not in EVENT_TYPES:
