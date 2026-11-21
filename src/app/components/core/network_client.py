@@ -250,7 +250,7 @@ class NetworkClient:
             connection = socket.create_connection((host, port), timeout=6)
             connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             connection.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-            connection.settimeout(8.0)
+            connection.settimeout(65.0)
             self.sock = connection
             saved = self.pairings.get_host(host, port)
             if saved:
