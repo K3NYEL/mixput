@@ -32,7 +32,7 @@ class NetworkClient:
         self._lock = threading.RLock()
         self._control_owner = "host"
         self._ownership_epoch = -1
-        self._last_input_sequence = 0
+        self._last_input_sequences = {}
         self._input_sequence = 0
         self._local_mode = False
         self._device_id = self.pairings.device_id
@@ -60,9 +60,10 @@ class NetworkClient:
         if self.input_backend:
             self.input_backend.release_all()
             with self._lock:
-                should_capture = not enabled and self._control_owner != self._device_id and self._ownership_epoch >= 0
-            self.input_backend.set_capture_enabled(should_capture)
-            self.input_backend.set_exclusive_capture(should_capture)
+                capture_enabled = not enabled and self._ownership_epoch >= 0
+                exclusive_capture = capture_enabled and self._control_owner != self._device_id
+            self.input_backend.set_capture_enabled(capture_enabled)
+            self.input_backend.set_exclusive_capture(exclusive_capture)
         with self._lock:
             channel = self._channel
             epoch = self._ownership_epoch
@@ -211,7 +212,7 @@ class NetworkClient:
             self._control_owner = owner
             self._ownership_epoch = epoch
             if epoch != previous_epoch:
-                self._last_input_sequence = 0
+                self._last_input_sequences.clear()
             active = owner == self._device_id
         if self.input_backend:
             if old_owner == self._device_id and not active:
@@ -219,8 +220,9 @@ class NetworkClient:
             # When this computer is not the active screen, capture its local
             # peripherals and forward them to the active screen. The active
             # computer keeps native local input and does not suppress its devices.
-            capture_remote = not active and not self.local_mode
-            self.input_backend.set_capture_enabled(capture_remote)
+            capture_enabled = not self.local_mode
+            capture_remote = capture_enabled and not active
+            self.input_backend.set_capture_enabled(capture_enabled)
             self.input_backend.set_exclusive_capture(capture_remote)
             self.input_backend.set_relative_mode(False)
             if active and old_owner != self._device_id:
@@ -243,11 +245,11 @@ class NetworkClient:
                 and message.get("ownership_epoch") == self._ownership_epoch
                 and isinstance(message.get("sequence"), int)
                 and not isinstance(message.get("sequence"), bool)
-                and message["sequence"] > self._last_input_sequence
+                and message["sequence"] > self._last_input_sequences.get(message.get("source_id"), 0)
             )
             if not valid:
                 return False
-            self._last_input_sequence = message["sequence"]
+            self._last_input_sequences[message["source_id"]] = message["sequence"]
         event = message.get("event")
         if not isinstance(event, dict) or event.get("type") not in EVENT_TYPES or not self.input_backend:
             return False
@@ -341,7 +343,7 @@ class NetworkClient:
             with self._lock:
                 self._control_owner = "host"
                 self._ownership_epoch = -1
-                self._last_input_sequence = 0
+                self._last_input_sequences.clear()
                 self._devices = []
                 self._local_mode = False
             if self.input_backend:
