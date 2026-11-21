@@ -96,16 +96,19 @@ class InputBackend:
         self.on_event(event)
 
     def _on_x11_edge(self, side):
+        # Edge handoff is needed on the active desktop too, when exclusive
+        # capture is deliberately released. The X11 monitor invokes this from
+        # its own worker, so session changes never block the Xlib event loop.
         with self._lock:
-            if (not self._capture_enabled or not self._exclusive_enabled
-                    or self._relative_mode or self._edge_latched):
+            if not self._capture_enabled or self._relative_mode:
                 return
-            self._edge_latched = True
+        # X11GrabController owns the edge latch and rearms it after the pointer
+        # leaves the boundary; do not maintain a second latch here.
         self.on_edge(side)
 
     def _edge_for_position(self, position):
-        """Return an edge only on the active screen, never on a parked source cursor."""
-        if self._relative_mode or not self._edge_sides or not self._screen_size or self._edge_latched:
+        """Detect an active-screen edge and re-arm after leaving the boundary."""
+        if self._relative_mode or not self._edge_sides or not self._screen_size:
             return None
         width, height = self._screen_size
         x, y = position
@@ -114,10 +117,13 @@ class InputBackend:
             else "left" if "left" in self._edge_sides and x <= self._edge_margin - 1
             else None
         )
-        if side and 0 <= y < height:
-            self._edge_latched = True
-            return side
-        return None
+        if side is None or not 0 <= y < height:
+            self._edge_latched = False
+            return None
+        if self._edge_latched:
+            return None
+        self._edge_latched = True
+        return side
 
     def _load(self):
         available, reason = self.availability()
@@ -140,6 +146,13 @@ class InputBackend:
                     on_event=self._on_x11_event,
                     on_edge=self._on_x11_edge,
                     on_toggle_local=self.on_toggle_local,
+                )
+                # The coordinator can be the active desktop from the instant
+                # the first peer joins; configure edge monitoring before any
+                # ownership transfer occurs.
+                edge_sides = set() if self._relative_mode else self._edge_sides
+                self._x11_grabber.configure_edges(
+                    edge_sides, self._screen_size, self._edge_margin
                 )
 
             def is_enabled():
@@ -189,7 +202,9 @@ class InputBackend:
                 if self._suppress_move:
                     self._suppress_move = False
                     return
-                side = self._edge_for_position(position)
+                # Linux edge handoff is monitored by the native X11
+                # controller, which works even when pointer capture is released.
+                side = self._edge_for_position(position) if platform.system() == "Windows" else None
                 if side:
                     self.on_edge(side)
                     return

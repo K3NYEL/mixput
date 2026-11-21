@@ -1,5 +1,4 @@
 import ipaddress
-import socket
 import threading
 import tkinter as tk
 from tkinter import messagebox
@@ -23,7 +22,10 @@ class ServerPreferences(tk.Frame):
         screen_size = (self.winfo_screenwidth(), self.winfo_screenheight())
         # The host is arranged to the left of the remote desktop:
         # right edge enters the remote machine; its left edge returns.
-        self.host_input.configure_edge_switch("right", screen_size)
+        # For a two-computer setup either edge can reach the other desktop.
+        # This keeps the direction consistent even when coordinator election
+        # chooses Windows rather than Linux (or vice versa).
+        self.host_input.configure_edge_switch(("left", "right"), screen_size)
         self.remote_input.configure_edge_switch(("left", "right"), screen_size)
         self.server = NetworkServer(
             on_log=self._queue_log,

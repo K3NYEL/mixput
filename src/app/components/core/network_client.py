@@ -134,24 +134,33 @@ class NetworkClient:
             return False
 
     def _on_local_edge(self, side):
+        if side not in ("left", "right"):
+            return False
         with self._lock:
             if self._local_mode or self._control_owner != self._device_id or not self._channel:
-                return
-            target = self._index + (1 if side == "right" else -1)
-            if not any(d.get("index") == target for d in self._devices):
-                channel = None
+                return False
+            if len(self._devices) == 2:
+                # In a two-device session either edge reaches the only other
+                # computer, regardless of which device became coordinator.
+                target_exists = any(d.get("id") != self._device_id for d in self._devices)
             else:
-                channel = self._channel
+                target = self._index + (1 if side == "right" else -1)
+                target_exists = any(d.get("index") == target for d in self._devices)
+            channel = self._channel if target_exists else None
+            epoch = self._ownership_epoch
         if channel is None:
-            return
+            return False
         try:
-            if not channel.send({
+            sent = bool(channel.send({
                 "version": PROTOCOL_VERSION, "kind": "control_switch",
-                "side": side, "ownership_epoch": self._ownership_epoch,
-            }):
+                "side": side, "ownership_epoch": epoch,
+            }))
+            if not sent:
                 self.on_message("[Mixput] The session closed before the desktop switch was sent.")
+            return sent
         except (OSError, ProtocolError, ValueError) as error:
             self.on_message(f"[Mixput] Could not switch device: {error}")
+            return False
 
     def send_chat(self, text):
         if not isinstance(text, str):
@@ -223,7 +232,13 @@ class NetworkClient:
             capture_enabled = not self.local_mode
             capture_remote = capture_enabled and not active
             self.input_backend.set_capture_enabled(capture_enabled)
-            self.input_backend.set_exclusive_capture(capture_remote)
+            exclusive_ready = self.input_backend.set_exclusive_capture(capture_remote)
+            if capture_remote and not exclusive_ready:
+                self.on_message(
+                    "[Mixput] Linux could not obtain exclusive keyboard/mouse capture. "
+                    "Use the logged-in X11/Xorg session, keep Mixput running as your "
+                    "desktop user, and close other software that may already grab input."
+                )
             # A non-owner must use relative pointer motion. On Windows, pynput
             # recenters the physical cursor while forwarding deltas; on X11 the
             # native grab keeps the pointer confined and forwards raw deltas.

@@ -204,15 +204,25 @@ class NetworkServer:
             return peer["name"] if peer else "Disconnected device"
 
     def _on_local_edge(self, side):
-        if side != "right":
-            return
+        if side not in ("left", "right"):
+            return False
         with self._lock:
             if self._local_mode or self._control_owner != "host":
-                return
-            next_peer = next((p for p in sorted(self._peers.values(), key=lambda x: x["index"])
-                              if p["index"] == 1), None)
-        if next_peer:
-            self._set_owner(next_peer["id"], "left")
+                return False
+            peers = sorted(self._peers.values(), key=lambda item: item["index"])
+            if len(peers) == 1:
+                # With two computers, either physical edge reaches the other
+                # desktop. This avoids depending on which random device ID won
+                # coordinator election.
+                next_peer = peers[0]
+            else:
+                next_peer = next(
+                    (peer for peer in peers if peer["index"] == (1 if side == "right" else -1)),
+                    None,
+                )
+        if not next_peer:
+            return False
+        return self._set_owner(next_peer["id"], "left" if side == "right" else "right")
 
     def _send_input(self, event):
         if not isinstance(event, dict) or event.get("type") not in EVENT_TYPES:
@@ -514,9 +524,12 @@ class NetworkServer:
                     requested_epoch = message.get("ownership_epoch")
                     with self._lock:
                         devices_now = self._device_snapshot_locked()
-                        current_index = next((d["index"] for d in devices_now if d["id"] == client_id), -1)
-                        target_index = current_index + (1 if side == "right" else -1 if side == "left" else 0)
-                        target = next((d for d in devices_now if d["index"] == target_index), None)
+                        if len(devices_now) == 2:
+                            target = next((device for device in devices_now if device["id"] != client_id), None)
+                        else:
+                            current_index = next((d["index"] for d in devices_now if d["id"] == client_id), -1)
+                            target_index = current_index + (1 if side == "right" else -1 if side == "left" else 0)
+                            target = next((d for d in devices_now if d["index"] == target_index), None)
                         allowed = (
                             self._control_owner == client_id
                             and not peer.get("local_mode", False)
