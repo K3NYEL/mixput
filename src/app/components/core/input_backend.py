@@ -124,6 +124,10 @@ class InputBackend:
                         if identity == "m":
                             self._hotkey_latched = False
                 if toggle:
+                    # Ctrl and Alt may already have been forwarded before M completed the chord.
+                    if self._exclusive_enabled:
+                        self.on_event({"type": "key_up", "key": "ctrl"})
+                        self.on_event({"type": "key_up", "key": "alt"})
                     self.on_toggle_local()
                     return
                 with self._lock:
