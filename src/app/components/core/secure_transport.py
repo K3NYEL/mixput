@@ -169,9 +169,8 @@ class SecureChannel:
         return None
 
     def close(self):
-        if self._closed.is_set():
-            return
-        self.flush(timeout=0.15)
-        self._shutdown_socket()
+        if not self._closed.is_set():
+            self.flush(timeout=0.15)
+            self._shutdown_socket()
         if threading.current_thread() is not self._writer:
-            self._writer.join(timeout=0.25)
+            self._writer.join(timeout=0.3)
