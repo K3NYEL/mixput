@@ -252,6 +252,9 @@ class NetworkClient:
             connection.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
             connection.settimeout(65.0)
             self.sock = connection
+            if not self.running or self._stop_event.is_set():
+                connection.close()
+                return
             saved = self.pairings.get_host(host, port)
             if saved:
                 send_control(connection, {"type": "resume", "version": PAIRING_VERSION,
