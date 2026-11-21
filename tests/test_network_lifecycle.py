@@ -96,6 +96,19 @@ class NetworkLifecycleTests(unittest.TestCase):
         self.assertEqual(packet["sequence"], 1)
         self.assertEqual(packet["event"]["key"], "a")
 
+    def test_parked_source_cursor_cannot_trigger_edge_handoff(self):
+        from app.components.core.input_backend import InputBackend
+
+        backend = InputBackend()
+        backend.configure_edge_switch(("left", "right"), (100, 80))
+        self.assertEqual(backend._edge_for_position((99, 40)), "right")
+
+        parked = InputBackend()
+        parked.configure_edge_switch(("left", "right"), (100, 80))
+        parked.set_relative_mode(True)
+        self.assertIsNone(parked._edge_for_position((99, 40)))
+        self.assertIsNone(parked._edge_for_position((0, 40)))
+
     def test_client_keeps_edge_detection_without_suppressing_active_local_input(self):
         backend = FakeInputBackend()
         client = NetworkClient(input_backend=backend, pairing_store=FakePairings())
