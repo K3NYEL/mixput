@@ -456,12 +456,18 @@ class ServerPreferences(tk.Frame):
             except tk.TclError:
                 continue
 
-    def destroy(self):
+    def shutdown(self):
+        if getattr(self, "_shutdown", False):
+            return
+        self._shutdown = True
         self.client.disconnect()
         self.server.stop()
         self.on_sharing_changed(False, self._active_port)
         self.host_input.close()
         self.remote_input.close()
+
+    def destroy(self):
+        self.shutdown()
         super().destroy()
 
 
