@@ -134,24 +134,33 @@ class NetworkClient:
             return False
 
     def _on_local_edge(self, side):
+        if side not in ("left", "right"):
+            return False
         with self._lock:
             if self._local_mode or self._control_owner != self._device_id or not self._channel:
-                return
-            target = self._index + (1 if side == "right" else -1)
-            if not any(d.get("index") == target for d in self._devices):
-                channel = None
+                return False
+            if len(self._devices) == 2:
+                # In a two-device session either edge reaches the only other
+                # computer, regardless of which device became coordinator.
+                target_exists = any(d.get("id") != self._device_id for d in self._devices)
             else:
-                channel = self._channel
+                target = self._index + (1 if side == "right" else -1)
+                target_exists = any(d.get("index") == target for d in self._devices)
+            channel = self._channel if target_exists else None
+            epoch = self._ownership_epoch
         if channel is None:
-            return
+            return False
         try:
-            if not channel.send({
+            sent = bool(channel.send({
                 "version": PROTOCOL_VERSION, "kind": "control_switch",
-                "side": side, "ownership_epoch": self._ownership_epoch,
-            }):
+                "side": side, "ownership_epoch": epoch,
+            }))
+            if not sent:
                 self.on_message("[Mixput] The session closed before the desktop switch was sent.")
+            return sent
         except (OSError, ProtocolError, ValueError) as error:
             self.on_message(f"[Mixput] Could not switch device: {error}")
+            return False
 
     def send_chat(self, text):
         if not isinstance(text, str):
