@@ -4,7 +4,7 @@ from tkinter import messagebox
 
 from app.components import theme
 from app.components.core.input_backend import InputBackend
-from app.components.core.network import get_network_details
+from app.components.core.network import get_active_network_info
 from app.components.core.network_client import NetworkClient
 from app.components.core.network_server import NetworkServer
 
@@ -69,7 +69,7 @@ class ServerPreferences(tk.Frame):
         network_frame = tk.Frame(host_frame, bg=c["bg_secondary"])
         network_frame.pack(fill=tk.X, pady=(2, 10))
         self.network_value_labels = {}
-        for label in ("Mixput virtual IP", "Transport IP address", "Subnet mask", "DNS servers", "Network interface"):
+        for label in ("Local IP address", "Network interface"):
             row = tk.Frame(network_frame, bg=c["bg_secondary"])
             row.pack(fill=tk.X, pady=2)
             tk.Label(
@@ -85,8 +85,7 @@ class ServerPreferences(tk.Frame):
             value.pack(side=tk.LEFT, fill=tk.X, expand=True)
             self.network_value_labels[label] = value
         self.local_ip = "0.0.0.0"
-        self.virtual_ip = self.server.virtual_network.host_ip
-        self.local_ip_label = self.network_value_labels["Transport IP address"]
+        self.local_ip_label = self.network_value_labels["Local IP address"]
         self.refresh_network_button = self._button(
             host_frame, "Refresh network information", self.refresh_network_info
         )
@@ -181,22 +180,14 @@ class ServerPreferences(tk.Frame):
                 "server_status": self._server_status,
                 "client_status": self._client_status,
                 "port": self._active_port, "local_ip": self.local_ip,
-                "virtual_ip": self.virtual_ip,
             })
             return
         names = [str(item.get("name", "Device")) for item in sorted(devices, key=lambda d: d.get("index", 0))]
         self.devices_label.configure(text="Connected desktops: " + "  →  ".join(names))
-        assigned_ip = state.get("virtual_ip")
-        if assigned_ip:
-            self.virtual_ip = str(assigned_ip)
-            virtual_label = self.network_value_labels.get("Mixput virtual IP")
-            if virtual_label is not None:
-                virtual_label.configure(text=self.virtual_ip)
         self.on_state_changed({
             "devices": devices, "owner": state.get("owner", "host"),
             "server_status": self._server_status, "client_status": self._client_status,
             "port": self._active_port, "local_ip": self.local_ip,
-            "virtual_ip": state.get("virtual_ip", self.virtual_ip),
         })
 
     def send_chat_message(self, text):
@@ -260,10 +251,9 @@ class ServerPreferences(tk.Frame):
         self.authorized_list.delete(0, tk.END)
         self._authorized_devices = self.server.pairings.list_authorized_clients()
         for device in self._authorized_devices:
-            virtual_ip = device.get("virtual_ip", "Not assigned")
             self.authorized_list.insert(
                 tk.END,
-                f'{device.get("name", "Device")}  ·  Mixput {virtual_ip}  ·  {device.get("address", "")}'
+                f'{device.get("name", "Device")}  ·  {device.get("address", "")}'
             )
 
     def revoke_selected_device(self):
@@ -280,20 +270,11 @@ class ServerPreferences(tk.Frame):
             self.server.revoke_device(device["id"])
             self._refresh_authorized_devices()
 
-    def _current_virtual_ip(self):
-        if self._server_status in ("listening", "connected", "pairing", "authenticating"):
-            return self.server.virtual_network.host_ip
-        return self.client.virtual_ip or self.server.virtual_network.host_ip
-
     def refresh_network_info(self):
-        interface, local_ip, subnet_mask, dns_servers = get_network_details()
+        interface, local_ip = get_active_network_info()
         self.local_ip = local_ip
-        self.virtual_ip = self._current_virtual_ip()
         values = {
-            "Mixput virtual IP": self.virtual_ip,
-            "Transport IP address": local_ip,
-            "Subnet mask": subnet_mask,
-            "DNS servers": dns_servers,
+            "Local IP address": local_ip,
             "Network interface": interface,
         }
         for label, value in values.items():
@@ -415,10 +396,6 @@ class ServerPreferences(tk.Frame):
         }
         server = server_labels.get(self._server_status, self._server_status.title())
         self.status_label.configure(text=f"Mixput server: {server}")
-        self.virtual_ip = self._current_virtual_ip()
-        virtual_label = self.network_value_labels.get("Mixput virtual IP")
-        if virtual_label is not None:
-            virtual_label.configure(text=self.virtual_ip)
         devices = self.server.connected_devices if self.server.running else (
             self.client._devices if self._client_status == "connected" else [])
         owner = self.server._control_owner if self.server.running else self.client._control_owner
@@ -426,7 +403,6 @@ class ServerPreferences(tk.Frame):
             "devices": devices, "owner": owner,
             "server_status": self._server_status, "client_status": self._client_status,
             "port": self._active_port, "local_ip": self.local_ip,
-            "virtual_ip": self.client.virtual_ip if self._client_status == "connected" else self.virtual_ip,
         })
 
     def apply_theme(self, colors):
