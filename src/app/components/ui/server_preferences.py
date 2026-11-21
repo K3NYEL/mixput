@@ -5,7 +5,7 @@ from tkinter import messagebox
 
 from app.components import theme
 from app.components.core.input_backend import InputBackend
-from app.components.core.diagnostics import open_log_directory
+from app.components.core.diagnostics import log_path, open_log_directory
 from app.components.core.device_discovery import DeviceDiscovery
 from app.components.core.network import get_active_network_info
 from app.components.core.network_client import NetworkClient
@@ -312,7 +312,7 @@ class ServerPreferences(tk.Frame):
             self._queue_log(f"[Mixput] Could not open diagnostics folder: {error}")
             messagebox.showerror(
                 "Mixput diagnostics",
-                f"Could not open the diagnostics folder.\n\nLog location:\n{open_log_directory.__module__}\n\n{error}",
+                f"Could not open the diagnostics folder.\n\nLog file: {log_path()}\n\n{error}",
                 parent=self,
             )
 
