@@ -155,7 +155,13 @@ class App(tk.Canvas):
         tk.Label(
             parent, text=title, font=("Arial", 20, "bold"),
             bg=c["bg_main"], fg=c["text_primary"],
-        ).pack(anchor=tk.W, pady=(12, 14))
+        ).pack(anchor=tk.W, pady=(12, 2))
+        if subtitle:
+            tk.Label(
+                parent, text=subtitle, font=("Arial", 9),
+                bg=c["bg_main"], fg=c["text_secondary"],
+                justify=tk.LEFT, wraplength=760,
+            ).pack(anchor=tk.W, pady=(0, 12))
 
     def _card(self, parent, title, detail):
         c = self.CURRENT_THEME
@@ -315,6 +321,35 @@ class App(tk.Canvas):
             font=("Arial", 8), bg=c["bg_main"], fg=c["text_secondary"],
         ).pack(side=tk.LEFT, padx=10)
 
+        tk.Label(
+            discovered, text="Connect manually",
+            font=("Arial", 12, "bold"), bg=c["bg_main"], fg=c["text_primary"],
+        ).pack(anchor=tk.W, pady=(16, 6))
+        manual_row = tk.Frame(discovered, bg=c["bg_main"])
+        manual_row.pack(fill=tk.X)
+        self.manual_host_entry = tk.Entry(
+            manual_row, width=22, relief=tk.FLAT,
+            bg=c["bg_secondary"], fg=c["text_primary"],
+            insertbackground=c["text_primary"],
+        )
+        self.manual_host_entry.insert(0, "")
+        self.manual_host_entry.pack(side=tk.LEFT, ipady=7, padx=(0, 8))
+        self.manual_host_entry.bind("<Return>", lambda _event: self._connect_manual_device())
+        self.manual_port_entry = tk.Entry(
+            manual_row, width=7, relief=tk.FLAT,
+            bg=c["bg_secondary"], fg=c["text_primary"],
+            insertbackground=c["text_primary"],
+        )
+        self.manual_port_entry.insert(0, "8080")
+        self.manual_port_entry.pack(side=tk.LEFT, ipady=7, padx=(0, 8))
+        self.manual_connect_button = tk.Button(
+            manual_row, text="Connect", command=self._connect_manual_device,
+            relief=tk.FLAT, cursor="hand2", padx=14, pady=7,
+            bg=c["border"], fg=c["text_primary"],
+            activebackground=c["border"], activeforeground=c["text_primary"],
+        )
+        self.manual_connect_button.pack(side=tk.LEFT)
+
         settings = self._page("settings")
         self._heading(
             settings, "Settings",
@@ -471,6 +506,21 @@ class App(tk.Canvas):
             state=tk.NORMAL if device["sharing"] else tk.DISABLED
         )
 
+    def _connect_manual_device(self):
+        host = self.manual_host_entry.get().strip()
+        try:
+            port = int(self.manual_port_entry.get().strip())
+            if not 1 <= port <= 65535:
+                raise ValueError("Port must be between 1 and 65535.")
+        except ValueError as error:
+            messagebox.showerror("Connection settings", str(error), parent=self)
+            return
+        if not host:
+            messagebox.showinfo("Connect to host", "Enter the host computer's LAN IPv4 address.", parent=self)
+            return
+        if self.connection_panel.server_preferences.connect_discovered_device(host, port):
+            self.show_page("server")
+
     def _use_selected_device(self):
         selected = self.devices_list.curselection()
         if not selected or selected[0] >= len(self.discovered_devices):
@@ -479,6 +529,9 @@ class App(tk.Canvas):
         if not device["sharing"]:
             return
         panel = self.connection_panel.server_preferences
+        if panel.server.running:
+            messagebox.showinfo("Mixput", "Stop this computer's server before joining another host.", parent=self)
+            return
         if panel._client_status == "connected" or panel.client.running:
             messagebox.showinfo("Mixput", "This laptop is already connected to another Mixput server.", parent=self)
             return
