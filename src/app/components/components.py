@@ -293,6 +293,11 @@ class App(tk.Canvas):
             font=("Arial", 9), bg=c["bg_main"], fg=c["text_secondary"],
         )
         self.discovery_status.pack(anchor=tk.W, pady=(0, 8))
+        self.device_connection_status = tk.Label(
+            discovered, text="Connection: not connected",
+            font=("Arial", 9, "bold"), bg=c["bg_main"], fg=c["text_secondary"],
+        )
+        self.device_connection_status.pack(anchor=tk.W, pady=(0, 8))
         list_frame = tk.Frame(
             discovered, bg=c["bg_secondary"],
             highlightbackground=c["border"], highlightthickness=1,
@@ -397,6 +402,18 @@ class App(tk.Canvas):
         self.home_count_value.configure(text=f"{len(devices)} / 4 devices")
         row = "  →  ".join(item.get("name", "Device") for item in sorted(devices, key=lambda item: item.get("index", 0)))
         self.home_devices_value.configure(text=row)
+        if hasattr(self, "device_connection_status"):
+            if client == "connected":
+                connection_text = "Connection: connected to host"
+            elif client == "connecting":
+                connection_text = "Connection: requesting access"
+            elif client == "reconnecting":
+                connection_text = "Connection: reconnecting"
+            elif server in ("listening", "connected", "pairing", "authenticating"):
+                connection_text = "Connection: this computer is sharing"
+            else:
+                connection_text = "Connection: not connected"
+            self.device_connection_status.configure(text=connection_text)
 
     def _queue_dashboard_activity(self, message):
         try:
@@ -518,8 +535,7 @@ class App(tk.Canvas):
         if not host:
             messagebox.showinfo("Connect to host", "Enter the host computer's LAN IPv4 address.", parent=self)
             return
-        if self.connection_panel.server_preferences.connect_discovered_device(host, port):
-            self.show_page("server")
+        self.connection_panel.server_preferences.connect_discovered_device(host, port)
 
     def _use_selected_device(self):
         selected = self.devices_list.curselection()
