@@ -16,6 +16,8 @@ class FakeInputBackend:
         self.capture_enabled = False
         self.exclusive = False
         self.relative = False
+        self.edge_warps = []
+        self.stopped = False
 
     def release_all(self):
         self.released += 1
@@ -30,8 +32,12 @@ class FakeInputBackend:
     def set_relative_mode(self, enabled):
         self.relative = bool(enabled)
 
-    def warp_to_edge(self, _side):
-        pass
+    def warp_to_edge(self, side):
+        self.edge_warps.append(side)
+        return True
+
+    def stop_capture(self):
+        self.stopped = True
 
     def apply_event(self, event):
         self.events.append(event)
@@ -110,6 +116,38 @@ class NetworkLifecycleTests(unittest.TestCase):
         self.assertTrue(backend.capture_enabled)
         self.assertTrue(backend.exclusive)
         self.assertTrue(backend.relative)
+
+    def test_active_peer_disconnect_restores_host_pointer_and_advances_epoch(self):
+        from app.components.core.input_ownership import InputOwnership
+
+        backend = FakeInputBackend()
+        server = NetworkServer.__new__(NetworkServer)
+        server._lock = threading.RLock()
+        server._ownership = InputOwnership("peer-a")
+        server._local_mode = False
+        server._host_name = "Host"
+        server.pairings = FakePairings()
+        server._capture = backend
+        server.on_devices = lambda _devices: None
+        server.on_log = lambda _message: None
+        departing = FakeChannel()
+        remaining = FakeChannel()
+        server._peers = {
+            "peer-a": {"id": "peer-a", "name": "A", "index": 1, "channel": departing},
+            "peer-b": {"id": "peer-b", "name": "B", "index": 2, "channel": remaining},
+        }
+
+        self.assertTrue(server._remove_peer("peer-a", departing))
+
+        self.assertEqual(server._control_owner, "host")
+        self.assertEqual(server._ownership_epoch, 1)
+        self.assertEqual(backend.edge_warps, ["right"])
+        self.assertFalse(backend.relative)
+        self.assertFalse(backend.exclusive)
+        state = remaining.messages[-1]
+        self.assertEqual(state["kind"], "session_state")
+        self.assertEqual(state["owner"], "host")
+        self.assertEqual(state["ownership_epoch"], 1)
 
     def test_server_routes_peer_input_to_host(self):
         from app.components.core.input_ownership import InputOwnership
