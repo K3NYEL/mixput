@@ -9,7 +9,6 @@ import time
 import psutil
 
 from app.components.core.pairing_store import PairingStore
-from app.components.core.virtual_network import DEFAULT_NETWORK, HOST_VIRTUAL_IP
 
 DISCOVERY_PORT = 45821
 DISCOVERY_INTERVAL = 2.0
@@ -92,7 +91,6 @@ class DeviceDiscovery:
                 "name": self.device_name,
                 "port": port,
                 "sharing": sharing,
-                "virtual_ip": str(HOST_VIRTUAL_IP) if sharing else None,
             },
             separators=(",", ":"),
         ).encode("utf-8")
@@ -183,22 +181,6 @@ class DeviceDiscovery:
         ):
             return
 
-        virtual_ip = message.get("virtual_ip")
-        if sharing:
-            try:
-                virtual_address = ipaddress.ip_address(virtual_ip)
-            except ValueError:
-                return
-            if (
-                virtual_address.version != 4
-                or virtual_address not in DEFAULT_NETWORK
-                or virtual_address in (DEFAULT_NETWORK.network_address, DEFAULT_NETWORK.broadcast_address)
-            ):
-                return
-            virtual_ip = str(virtual_address)
-        else:
-            virtual_ip = None
-
         try:
             ip = ipaddress.ip_address(source_ip)
             if ip.version != 4 or ip.is_loopback or ip.is_unspecified:
@@ -212,7 +194,6 @@ class DeviceDiscovery:
             "ip": source_ip,
             "port": port,
             "sharing": sharing,
-            "virtual_ip": virtual_ip,
             "last_seen": time.monotonic(),
         }
 
@@ -226,7 +207,6 @@ class DeviceDiscovery:
                     "ip": peer["ip"],
                     "port": peer["port"],
                     "sharing": peer["sharing"],
-                    "virtual_ip": peer["virtual_ip"],
                 }
             )
         devices.sort(key=lambda item: (not item["sharing"], item["name"].lower()))
