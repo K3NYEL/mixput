@@ -3,6 +3,10 @@ import os
 import platform
 import threading
 
+from app.components.core.diagnostics import get_logger
+
+_LOG = get_logger("input")
+
 
 class InputBackendError(RuntimeError):
     pass
@@ -233,16 +237,34 @@ class InputBackend:
                 if is_enabled() and self._exclusive_enabled:
                     self.on_event({"type": "mouse_scroll", "dx": int(dx), "dy": int(dy)})
 
-            def windows_filter(listener):
-                if self._capture_enabled and self._exclusive_enabled:
-                    listener.suppress_event()
+            def windows_filter(listener, data, injected_mask):
+                # Do not swallow input synthesized by pynput itself. In
+                # relative mode Windows must accept the injected recenter
+                # movement; suppressing it leaves the physical cursor pinned
+                # at the edge and makes both desktops appear frozen.
+                flags = int(getattr(data, "flags", 0) or 0)
+                if flags & injected_mask:
+                    return True
+                with self._lock:
+                    should_suppress = self._capture_enabled and self._exclusive_enabled
+                if should_suppress:
+                    try:
+                        listener.suppress_event()
+                    except Exception:
+                        _LOG.exception("Windows hook could not suppress an input event")
                 return True
 
             keyboard_options = {}
             mouse_options = {}
             if platform.system() == "Windows":
-                keyboard_options["win32_event_filter"] = lambda _msg, _data: windows_filter(self._keyboard_listener)
-                mouse_options["win32_event_filter"] = lambda _msg, _data: windows_filter(self._mouse_listener)
+                # KBDLLHOOKSTRUCT: LLKHF_INJECTED / LLKHF_LOWER_IL_INJECTED.
+                # MSLLHOOKSTRUCT: LLMHF_INJECTED / LLMHF_LOWER_IL_INJECTED.
+                keyboard_options["win32_event_filter"] = (
+                    lambda _msg, data: windows_filter(self._keyboard_listener, data, 0x12)
+                )
+                mouse_options["win32_event_filter"] = (
+                    lambda _msg, data: windows_filter(self._mouse_listener, data, 0x03)
+                )
             self._keyboard_listener = keyboard.Listener(
                 on_press=lambda key: key_event("key_down", key),
                 on_release=lambda key: key_event("key_up", key),
@@ -254,8 +276,22 @@ class InputBackend:
             )
             self._capture_enabled = True
             self._edge_latched = False
-            self._keyboard_listener.start()
-            self._mouse_listener.start()
+            try:
+                self._keyboard_listener.start()
+                self._mouse_listener.start()
+            except Exception:
+                _LOG.exception("Failed to start native keyboard/mouse listeners")
+                self._capture_enabled = False
+                self._exclusive_enabled = False
+                for listener in (self._keyboard_listener, self._mouse_listener):
+                    try:
+                        if listener:
+                            listener.stop()
+                    except Exception:
+                        _LOG.exception("Failed to stop a partially initialized input listener")
+                self._keyboard_listener = None
+                self._mouse_listener = None
+                raise
 
     def set_capture_enabled(self, enabled):
         with self._lock:
@@ -302,6 +338,7 @@ class InputBackend:
             self._last_position = position
             return True
         except (InputBackendError, OSError, ValueError, TypeError):
+            _LOG.exception("Could not park the local cursor")
             return False
 
     def warp_to_edge(self, side):
@@ -322,6 +359,7 @@ class InputBackend:
             self._edge_latched = False
             return True
         except (InputBackendError, OSError, ValueError, TypeError):
+            _LOG.exception("Could not warp the cursor to the incoming screen edge")
             return False
 
     def stop_capture(self):
@@ -404,6 +442,7 @@ class InputBackend:
                 return False
             return True
         except (InputBackendError, OSError, ValueError, TypeError):
+            _LOG.exception("Could not apply remote input event: %r", event)
             return False
 
     def release_all(self):
