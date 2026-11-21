@@ -103,7 +103,7 @@ class SecureChannel:
             if len(payload) > MAX_MESSAGE_BYTES:
                 raise ProtocolError("Message exceeds the protocol size limit.")
 
-            encrypted = self._cipher.encrypt(payload) + b"\\n"
+            encrypted = self._cipher.encrypt(payload) + b"\n"
             if len(encrypted) > MAX_ENCRYPTED_FRAME_BYTES:
                 raise ProtocolError("Encrypted frame exceeds the protocol size limit.")
 
@@ -129,7 +129,7 @@ class SecureChannel:
 
     def receive(self):
         while not self._closed.is_set():
-            marker = self._buffer.find(b"\\n")
+            marker = self._buffer.find(b"\n")
             if marker >= 0:
                 line = bytes(self._buffer[:marker])
                 del self._buffer[:marker + 1]
@@ -164,7 +164,7 @@ class SecureChannel:
             if len(self._buffer) > MAX_ENCRYPTED_FRAME_BYTES:
                 # A complete frame may be followed by more frames in one TCP read.
                 # Reject only when no delimiter exists within the maximum frame.
-                if self._buffer.find(b"\\n") < 0:
+                if self._buffer.find(b"\n") < 0:
                     raise ProtocolError("Encrypted frame is too large.")
         return None
 
