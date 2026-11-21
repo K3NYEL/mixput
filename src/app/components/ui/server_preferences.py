@@ -60,6 +60,7 @@ class ServerPreferences(tk.Frame):
         self.on_activity = lambda message: None
         self.on_sharing_changed = lambda sharing, port: None
         self._build()
+        self._queue_log(f"[Mixput] Diagnostic log: {log_path()}")
         # Every running Mixput instance listens and announces itself. A stable
         # identity election chooses the same session coordinator on every peer.
         self.after(300, self.start_server)
