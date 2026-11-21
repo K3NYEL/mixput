@@ -13,9 +13,11 @@ from app.components import App, theme
 class MainWindow(tk.Tk):
     def __init__(self):
         super().__init__()
+        self.title("Mixput")
+        self.geometry("1100x720")
+        self.minsize(920, 620)
         self.app = App()
         self.app.pack(fill=tk.BOTH, expand=True)
-        self.title("Mixput")
         self.state("normal")
         self.theme = theme
         self.DARK_THEME = False
