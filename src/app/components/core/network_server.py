@@ -94,6 +94,16 @@ class NetworkServer:
             if self._local_mode == enabled:
                 return False
             self._local_mode = enabled
+        with self._lock:
+            active_peer = self._peers.get(self._control_owner)
+        if enabled and active_peer:
+            try:
+                active_peer["channel"].send({
+                    "version": PROTOCOL_VERSION,
+                    "kind": "release_inputs",
+                })
+            except (OSError, ProtocolError, ValueError):
+                pass
         if self._capture:
             self._capture.release_all()
             self._capture.set_exclusive_capture(not enabled and self._control_owner != "host")
