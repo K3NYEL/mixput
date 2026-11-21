@@ -63,12 +63,13 @@ class NetworkClient:
             epoch = self._ownership_epoch
         if channel:
             try:
-                channel.send({
+                if not channel.send({
                     "version": PROTOCOL_VERSION,
                     "kind": "local_mode",
                     "enabled": enabled,
                     "ownership_epoch": epoch,
-                })
+                }):
+                    self.on_message("[Mixput] The session closed before local mode could synchronize.")
             except (OSError, ProtocolError, ValueError) as error:
                 self.on_message(f"[Mixput] Could not synchronize local mode: {error}")
         self.on_message(f"[Mixput] Local mode {'enabled' if enabled else 'disabled'}.")
@@ -115,10 +116,11 @@ class NetworkClient:
         if channel is None:
             return
         try:
-            channel.send({
+            if not channel.send({
                 "version": PROTOCOL_VERSION, "kind": "control_switch",
                 "side": side, "ownership_epoch": self._ownership_epoch,
-            })
+            }):
+                self.on_message("[Mixput] The session closed before the desktop switch was sent.")
         except (OSError, ProtocolError, ValueError) as error:
             self.on_message(f"[Mixput] Could not switch device: {error}")
 
@@ -133,8 +135,7 @@ class NetworkClient:
         if not channel:
             return False
         try:
-            channel.send({"version": PROTOCOL_VERSION, "kind": "chat", "text": text})
-            return True
+            return bool(channel.send({"version": PROTOCOL_VERSION, "kind": "chat", "text": text}))
         except (OSError, ProtocolError, ValueError):
             return False
 
