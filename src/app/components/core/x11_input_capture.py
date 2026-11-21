@@ -152,6 +152,12 @@ class X11GrabController:
             if dx or dy:
                 self.on_event({"type": "mouse_move", "dx": dx, "dy": dy})
 
+    @staticmethod
+    def _status_code(reply):
+        """python-xlib versions may return a status int or a reply with .status."""
+        status = getattr(reply, "status", reply)
+        return int(status)
+
     def _run(self):
         display = None
         grabbed_pointer = grabbed_keyboard = False
@@ -169,14 +175,16 @@ class X11GrabController:
                         pointer_mode=X.GrabModeAsync, keyboard_mode=X.GrabModeAsync,
                         confine_to=root, cursor=X.NONE, time=X.CurrentTime,
                     )
-                    grabbed_pointer = pointer.status == X.GrabSuccess
+                    pointer_status = self._status_code(pointer)
+                    grabbed_pointer = pointer_status == X.GrabSuccess
                     keyboard = None
                     if grabbed_pointer:
                         keyboard = root.grab_keyboard(
                             owner_events=False, pointer_mode=X.GrabModeAsync,
                             keyboard_mode=X.GrabModeAsync, time=X.CurrentTime,
                         )
-                        grabbed_keyboard = keyboard.status == X.GrabSuccess
+                        keyboard_status = self._status_code(keyboard)
+                        grabbed_keyboard = keyboard_status == X.GrabSuccess
                     else:
                         grabbed_keyboard = False
                     if not (grabbed_pointer and grabbed_keyboard):
@@ -184,8 +192,9 @@ class X11GrabController:
                             root.ungrab_pointer(X.CurrentTime)
                         if grabbed_keyboard:
                             root.ungrab_keyboard(X.CurrentTime)
-                        pointer_status = int(pointer.status)
-                        keyboard_status = int(keyboard.status) if keyboard is not None else None
+                        keyboard_status = (
+                            self._status_code(keyboard) if keyboard is not None else None
+                        )
                         status_names = {
                             X.GrabSuccess: "GrabSuccess",
                             X.AlreadyGrabbed: "AlreadyGrabbed",
