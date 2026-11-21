@@ -63,7 +63,7 @@ class SecureChannelTests(unittest.TestCase):
                 {"sequence": 1, "message": {"version": 3, "kind": "invalid"}},
                 separators=(",", ":"),
             ).encode("utf-8")
-            raw_peer.sendall(Fernet(self.token.encode("ascii")).encrypt(payload) + b"\\n")
+            raw_peer.sendall(Fernet(self.token.encode("ascii")).encrypt(payload) + b"\n")
             with self.assertRaises(ProtocolError):
                 receiver.receive()
         finally:
