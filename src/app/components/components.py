@@ -576,9 +576,19 @@ class App(tk.Canvas):
             except tk.TclError:
                 continue
 
-    def destroy(self):
+    def shutdown(self):
+        if getattr(self, "_shutdown", False):
+            return
+        self._shutdown = True
         if hasattr(self, "discovery"):
             self.discovery.stop()
+        panel = getattr(self, "connection_panel", None)
+        preferences = getattr(panel, "server_preferences", None)
+        if preferences is not None:
+            preferences.shutdown()
+
+    def destroy(self):
+        self.shutdown()
         super().destroy()
 
     def _show_update_diagnostics(self):
