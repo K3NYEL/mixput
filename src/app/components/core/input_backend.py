@@ -100,9 +100,10 @@ class InputBackend:
         # capture is deliberately released. The X11 monitor invokes this from
         # its own worker, so session changes never block the Xlib event loop.
         with self._lock:
-            if (not self._capture_enabled or self._relative_mode or self._edge_latched):
+            if not self._capture_enabled or self._relative_mode:
                 return
-            self._edge_latched = True
+        # X11GrabController owns the edge latch and rearms it after the pointer
+        # leaves the boundary; do not maintain a second latch here.
         self.on_edge(side)
 
     def _edge_for_position(self, position):
