@@ -20,6 +20,7 @@ class MainWindows(tk.Tk):
 
     def on_close(self):
         if messagebox.askokcancel("Quit", "Do you want to quit?"):
+            self.app.shutdown()
             self.destroy()
 
     def resource_path(self, relative_path: str) -> Path:
