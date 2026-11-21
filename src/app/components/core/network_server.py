@@ -465,19 +465,14 @@ class NetworkServer:
                         raise ProtocolError("Invalid local-mode state.")
                     with self._lock:
                         current_peer = self._peers.get(client_id)
-                        valid = (
-                            current_peer is peer
-                            and isinstance(requested_epoch, int)
-                            and not isinstance(requested_epoch, bool)
-                            and requested_epoch == self._ownership_epoch
-                        )
+                        valid = current_peer is peer
                         if valid:
                             current_peer["local_mode"] = enabled
                             return_to_host = enabled and self._control_owner == client_id
                         else:
                             return_to_host = False
                     if not valid:
-                        raise ProtocolError("Stale local-mode request.")
+                        break
                     self.on_log(
                         f"[Mixput] {peer['name']} {'entered local mode' if enabled else 'returned to shared mode'}."
                     )
