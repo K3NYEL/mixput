@@ -77,7 +77,7 @@ class NetworkServer:
 
     def start(self, host="0.0.0.0", port=8080):
         with self._lock:
-            if self.running:
+            if self.running or (self._thread and self._thread.is_alive()):
                 return False
             self.running = True
             self._thread = threading.Thread(target=self._run, args=(host, port),
@@ -158,7 +158,10 @@ class NetworkServer:
 
     def _set_owner(self, device_id, enter_edge=None):
         with self._lock:
-            if device_id != "host" and device_id not in self._peers:
+            if device_id != "host" and (
+                device_id not in self._peers
+                or self._peers[device_id].get("local_mode", False)
+            ):
                 return False
             allowed = {"host", *self._peers.keys()}
             transfer = self._ownership.transfer(device_id, allowed)
@@ -222,7 +225,7 @@ class NetworkServer:
             target_id = self._control_owner
             epoch = self._ownership_epoch
             peer = self._peers.get(target_id)
-        if target_id == "host" or peer is None:
+        if target_id == "host" or peer is None or peer.get("local_mode", False):
             return False
         try:
             with self._lock:
@@ -294,6 +297,7 @@ class NetworkServer:
 
     def _run(self, host, port):
         server = None
+        final_status = "stopped"
         try:
             server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -333,7 +337,7 @@ class NetworkServer:
         except OSError as error:
             if self.running:
                 self.on_log(f"[Mixput] Server error: {error}")
-                self.on_status("error")
+                final_status = "error"
         finally:
             self._close_all_peers()
             if server:
@@ -344,7 +348,7 @@ class NetworkServer:
             with self._lock:
                 self._server_socket = None
                 self.running = False
-            self.on_status("stopped")
+            self.on_status(final_status)
 
     def _request_approval(self, request):
         request_id = uuid.uuid4().hex
@@ -427,7 +431,7 @@ class NetworkServer:
                 peer = {"id": client_id, "name": (name.strip() if 'name' in locals() else self.pairings.get_authorized_client(client_id)["name"]),
                         "channel": channel, "socket": connection, "index": index,
                         "address": address[0],
-                        "virtual_ip": virtual_ip}
+                        "virtual_ip": virtual_ip, "local_mode": False}
                 self._peers[client_id] = peer
                 owner = self._control_owner
                 devices = self._device_snapshot_locked()
@@ -453,11 +457,34 @@ class NetworkServer:
                 if kind == "disconnect":
                     break
                 if kind == "input":
+                    self.on_log("[Mixput] Ignored input from a receiver device.")
+                elif kind == "local_mode":
+                    enabled = message.get("enabled")
+                    requested_epoch = message.get("ownership_epoch")
+                    if not isinstance(enabled, bool):
+                        raise ProtocolError("Invalid local-mode state.")
                     with self._lock:
-                        owner = self._control_owner
-                    event = message.get("event")
-                    if isinstance(event, dict):
-                        self.on_log("[Mixput] Ignored input from a receiver device.")
+                        current_peer = self._peers.get(client_id)
+                        valid = (
+                            current_peer is peer
+                            and isinstance(requested_epoch, int)
+                            and not isinstance(requested_epoch, bool)
+                            and requested_epoch == self._ownership_epoch
+                        )
+                        if valid:
+                            current_peer["local_mode"] = enabled
+                            return_to_host = enabled and self._control_owner == client_id
+                        else:
+                            return_to_host = False
+                    if not valid:
+                        raise ProtocolError("Stale local-mode request.")
+                    self.on_log(
+                        f"[Mixput] {peer['name']} {'entered local mode' if enabled else 'returned to shared mode'}."
+                    )
+                    if return_to_host:
+                        self._set_owner("host", "right")
+                    else:
+                        self._notify_devices()
                 elif kind == "control_switch":
                     side = message.get("side")
                     requested_epoch = message.get("ownership_epoch")
@@ -468,6 +495,7 @@ class NetworkServer:
                         target = next((d for d in devices_now if d["index"] == target_index), None)
                         allowed = (
                             self._control_owner == client_id
+                            and not peer.get("local_mode", False)
                             and isinstance(requested_epoch, int)
                             and not isinstance(requested_epoch, bool)
                             and requested_epoch == self._ownership_epoch
@@ -551,11 +579,17 @@ class NetworkServer:
         with self._lock:
             self.running = False
             server = self._server_socket
+            thread = self._thread
         self._close_all_peers()
         if server:
             try:
                 server.close()
             except OSError:
                 pass
+        if thread and thread is not threading.current_thread() and thread.is_alive():
+            thread.join(timeout=2.0)
+        with self._lock:
+            if thread is None or not thread.is_alive():
+                self._thread = None
         self.on_status("stopped")
         self.on_log("[Mixput] Sharing stopped.")
