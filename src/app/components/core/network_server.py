@@ -11,7 +11,6 @@ from app.components.core.pairing_handshake import (
 )
 from app.components.core.pairing_store import PairingStore
 from app.components.core.secure_transport import SecureChannel
-from app.components.core.virtual_network import VirtualNetworkManager
 from app.components.core.input_ownership import InputOwnership
 
 MAX_DEVICES = 4
@@ -27,15 +26,6 @@ class NetworkServer:
         self.on_chat = on_chat or (lambda message: None)
         self.on_devices = on_devices or (lambda devices: None)
         self.pairings = pairing_store or PairingStore()
-        self.virtual_network = VirtualNetworkManager(self.pairings.device_id)
-        for saved_device in self.pairings.list_authorized_clients():
-            saved_ip = saved_device.get("virtual_ip")
-            if saved_ip:
-                try:
-                    self.virtual_network.reserve(saved_device["id"], saved_ip)
-                except (KeyError, ValueError):
-                    # Repair invalid or duplicate legacy assignments when that device reconnects.
-                    continue
         self.running = False
         self._server_socket = None
         self._thread = None
@@ -68,10 +58,9 @@ class NetworkServer:
 
     def _device_snapshot_locked(self):
         return [{"id": "host", "device_id": self.pairings.device_id,
-                 "name": self._host_name, "index": 0, "host": True,
-                 "virtual_ip": self.virtual_network.host_ip}] + [
+                 "name": self._host_name, "index": 0, "host": True}] + [
             {"id": p["id"], "device_id": p["id"], "name": p["name"],
-             "index": p["index"], "host": False, "virtual_ip": p["virtual_ip"]}
+             "index": p["index"], "host": False}
             for p in sorted(self._peers.values(), key=lambda item: item["index"])
         ]
 
@@ -134,8 +123,7 @@ class NetworkServer:
         try:
             peer["channel"].send({"version": PROTOCOL_VERSION, "kind": "session_state",
                                   "devices": devices, "owner": owner, "enter_edge": enter_edge,
-                                  "ownership_epoch": ownership_epoch,
-                                  "virtual_network": self.virtual_network.network_cidr})
+                                  "ownership_epoch": ownership_epoch})
         except (OSError, ProtocolError, ValueError):
             pass
 
@@ -280,21 +268,6 @@ class NetworkServer:
             self.on_log("[Mixput] Device authorization revoked.")
         return revoked
 
-    def _virtual_ip_for(self, device_id):
-        record = self.pairings.get_authorized_client(device_id)
-        if not record:
-            raise ProtocolError("The device must be authorized before receiving a virtual IP.")
-        saved_ip = record.get("virtual_ip")
-        if saved_ip:
-            try:
-                return self.virtual_network.reserve(device_id, saved_ip)
-            except ValueError:
-                pass
-        virtual_ip = self.virtual_network.address_for(device_id)
-        if not self.pairings.set_client_virtual_ip(device_id, virtual_ip):
-            raise ProtocolError("Could not persist the Mixput virtual IP assignment.")
-        return virtual_ip
-
     def _run(self, host, port):
         server = None
         final_status = "stopped"
@@ -418,7 +391,6 @@ class NetworkServer:
                     "host_id": self.pairings.device_id, "host_name": self._host_name,
                     "public_key": public_text, "nonce": nonce, "ciphertext": ciphertext})
                 channel = SecureChannel(connection, token)
-            virtual_ip = self._virtual_ip_for(client_id)
             with self._lock:
                 if not self.running or len(self._peers) >= MAX_DEVICES - 1 or client_id in self._peers:
                     raise ProtocolError("The Mixput server is full or this device is already connected.")
@@ -430,8 +402,7 @@ class NetworkServer:
                 index = len(self._peers) + 1
                 peer = {"id": client_id, "name": (name.strip() if 'name' in locals() else self.pairings.get_authorized_client(client_id)["name"]),
                         "channel": channel, "socket": connection, "index": index,
-                        "address": address[0],
-                        "virtual_ip": virtual_ip, "local_mode": False}
+                        "address": address[0], "local_mode": False}
                 self._peers[client_id] = peer
                 owner = self._control_owner
                 devices = self._device_snapshot_locked()
