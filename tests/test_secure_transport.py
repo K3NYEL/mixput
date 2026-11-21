@@ -74,6 +74,10 @@ class SecureChannelTests(unittest.TestCase):
         with self.assertRaises(ProtocolError):
             self.left.send({"kind": "large", "value": "x" * 5000})
 
+    def test_writer_thread_stops_when_channel_closes(self):
+        self.left.close()
+        self.assertFalse(self.left._writer.is_alive())
+
     def test_queue_overflow_closes_session_instead_of_dropping_input(self):
         blocked_socket = BlockingSocket()
         channel = SecureChannel(blocked_socket, self.token)
