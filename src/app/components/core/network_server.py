@@ -231,12 +231,11 @@ class NetworkServer:
                     return False
                 self._input_sequence = getattr(self, "_input_sequence", 0) + 1
                 sequence = self._input_sequence
-            peer["channel"].send({
+            return bool(peer["channel"].send({
                 "version": PROTOCOL_VERSION, "kind": "input",
                 "source_id": "host", "target_id": target_id,
                 "ownership_epoch": epoch, "sequence": sequence, "event": event,
-            })
-            return True
+            }))
         except (OSError, ProtocolError, ValueError) as error:
             self.on_log(f"[Mixput] Could not transmit input: {error}")
             return False
@@ -249,15 +248,19 @@ class NetworkServer:
             return False
         message = {"version": PROTOCOL_VERSION, "kind": "chat",
                    "sender_id": "host", "sender": self._host_name, "text": text}
-        self.on_chat(message)
         with self._lock:
             peers = list(self._peers.values())
+        if not peers:
+            return False
+        delivered = False
         for peer in peers:
             try:
-                peer["channel"].send(message)
+                delivered = bool(peer["channel"].send(message)) or delivered
             except (OSError, ProtocolError, ValueError):
-                pass
-        return True
+                continue
+        if delivered:
+            self.on_chat(message)
+        return delivered
 
     def approve_pairing(self, request_id, approved):
         with self._lock:
