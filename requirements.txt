@@ -7,6 +7,7 @@ packaging==26.3
 pillow==13.0.0
 psutil==7.2.2
 pynput>=1.7.7
+python-xlib>=0.33; sys_platform == "linux"
 pyinstaller==6.22.3
 pyinstaller-hooks-contrib==2026.10
 requests==2.34.2
