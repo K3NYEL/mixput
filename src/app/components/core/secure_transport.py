@@ -143,10 +143,11 @@ class SecureChannel:
                         "Pairing key is incorrect or message is invalid."
                     ) from error
 
+                sequence = envelope.get("sequence") if isinstance(envelope, dict) else None
                 if (
-                    not isinstance(envelope, dict)
-                    or isinstance(envelope.get("sequence"), bool)
-                    or envelope.get("sequence") != self._receive_sequence
+                    not isinstance(sequence, int)
+                    or isinstance(sequence, bool)
+                    or sequence != self._receive_sequence
                 ):
                     raise ProtocolError("Invalid or replayed message sequence.")
 
