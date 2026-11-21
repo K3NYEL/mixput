@@ -90,6 +90,7 @@ class NetworkClient:
                 return False
             self.running = True
             self._stop_event.clear()
+            self._terminal_error = False
             self.on_status("connecting")
             self._thread = threading.Thread(
                 target=self._run, args=(host, port),
