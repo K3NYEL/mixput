@@ -65,6 +65,19 @@ class NetworkClient:
             self._local_mode = enabled
         if self.input_backend:
             self.input_backend.release_all()
+        with self._lock:
+            channel = self._channel
+            epoch = self._ownership_epoch
+        if channel:
+            try:
+                channel.send({
+                    "version": PROTOCOL_VERSION,
+                    "kind": "local_mode",
+                    "enabled": enabled,
+                    "ownership_epoch": epoch,
+                })
+            except (OSError, ProtocolError, ValueError) as error:
+                self.on_message(f"[Mixput] Could not synchronize local mode: {error}")
         self.on_message(f"[Mixput] Local mode {'enabled' if enabled else 'disabled'}.")
         self.on_session({
             "devices": self._devices, "owner": self._control_owner,
@@ -73,16 +86,23 @@ class NetworkClient:
         return True
 
     def connect(self, host, port=8080):
-        if self.running:
-            return False
+        with self._lock:
+            if self.running or (self._thread and self._thread.is_alive()):
+                return False
         if not host:
             self.on_message("[Mixput] Select or enter the host laptop address.")
             return False
-        self.running = True
-        self._stop_event.clear()
-        self.on_status("connecting")
-        self._thread = threading.Thread(target=self._run, args=(host, port), daemon=True, name="MixputClient")
-        self._thread.start()
+        with self._lock:
+            if self.running or (self._thread and self._thread.is_alive()):
+                return False
+            self.running = True
+            self._stop_event.clear()
+            self.on_status("connecting")
+            self._thread = threading.Thread(
+                target=self._run, args=(host, port),
+                daemon=True, name="MixputClient",
+            )
+            self._thread.start()
         return True
 
     def _send_input(self, event):
@@ -328,19 +348,27 @@ class NetworkClient:
             self.on_session({"devices": [], "owner": "host", "index": 1})
 
     def disconnect(self):
-        self.running = False
-        self._stop_event.set()
-        channel = self._channel
+        with self._lock:
+            self.running = False
+            self._stop_event.set()
+            channel = self._channel
+            sock = self.sock
+            thread = self._thread
         if channel:
             try:
                 channel.send({"version": PROTOCOL_VERSION, "kind": "disconnect"})
             except (OSError, ProtocolError):
                 pass
             channel.close()
-        elif self.sock:
+        elif sock:
             try:
-                self.sock.shutdown(socket.SHUT_RDWR)
+                sock.shutdown(socket.SHUT_RDWR)
             except OSError:
                 pass
-            self.sock.close()
+            try:
+                sock.close()
+            except OSError:
+                pass
+        if thread and thread is not threading.current_thread() and thread.is_alive():
+            thread.join(timeout=2.0)
         self.on_status("disconnected")
